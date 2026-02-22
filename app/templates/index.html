@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardiac Abnormality Detection System</title>
+    <meta name="description" content="AI-powered cardiac abnormality detection through cardiometric feature analysis">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <svg class="heart-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path
+                            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z">
+                        </path>
+                    </svg>
+                    <h1>Cardiac Abnormality Detection</h1>
+                </div>
+                <p class="subtitle">Intelligent identification through cardiometric feature analysis</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section card">
+                <h2>Upload ECG Data</h2>
+                <div class="upload-area" id="uploadArea">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p class="upload-text">Drop ECG file here or click to browse</p>
+                    <p class="upload-hint">Supports CSV, TXT, or JSON formats</p>
+                    <input type="file" id="fileInput" accept=".csv,.txt,.json" hidden>
+                </div>
+
+                <!-- Manual Input Option -->
+                <div class="manual-input">
+                    <button class="btn-secondary" id="generateSampleBtn">Generate Sample ECG</button>
+                    <button class="btn-secondary" id="manualInputBtn">Manual Input</button>
+                </div>
+            </section>
+
+            <!-- ECG Visualization -->
+            <section class="visualization-section card" id="visualizationSection" style="display: none;">
+                <h2>ECG Signal</h2>
+                <div id="ecgPlot" class="plot-container"></div>
+                <button class="btn-primary" id="analyzeBtn">
+                    <span class="btn-text">Analyze ECG</span>
+                    <span class="btn-loader" style="display: none;">
+                        <span class="spinner"></span>
+                        Analyzing...
+                    </span>
+                </button>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <!-- Prediction Card -->
+                <div class="card result-card">
+                    <h2>Diagnosis</h2>
+                    <div class="prediction-result" id="predictionResult">
+                        <div class="prediction-icon" id="predictionIcon"></div>
+                        <h3 class="prediction-label" id="predictionLabel">-</h3>
+                        <p class="prediction-confidence" id="predictionConfidence">-</p>
+                    </div>
+                </div>
+
+                <!-- Probabilities Card -->
+                <div class="card probabilities-card">
+                    <h2>Class Probabilities</h2>
+                    <div id="probabilitiesContainer" class="probabilities-container"></div>
+                </div>
+
+                <!-- Features Card -->
+                <div class="card features-card">
+                    <h2>Cardiometric Features</h2>
+                    <div id="featuresContainer" class="features-container"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>⚠️ This system is for research and educational purposes only. Not for clinical diagnosis.</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+
+</html>

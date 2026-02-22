@@ -1,0 +1,232 @@
+"""
+MongoDB database layer for Cardiac Monitor Pro.
+Replaces the SQLite/SQLAlchemy layer with PyMongo.
+
+Collections:
+  - patients       → Patient records
+  - ecg_analyses   → ECG analysis results
+  - reports        → Generated report metadata
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime
+from typing import Optional
+
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo.collection import Collection
+from pymongo.database import Database
+from bson import ObjectId
+from bson.errors import InvalidId
+
+# ── Connection config ─────────────────────────────────────────────────────────
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/')
+DB_NAME   = os.environ.get('MONGO_DB',  'cardiac_monitor')
+
+_client: Optional[MongoClient] = None
+_db: Optional[Database] = None
+
+
+def get_client() -> MongoClient:
+    global _client
+    if _client is None:
+        _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=4000)
+    return _client
+
+
+def get_database() -> Database:
+    global _db
+    if _db is None:
+        _db = get_client()[DB_NAME]
+    return _db
+
+
+# ── Collection accessors ──────────────────────────────────────────────────────
+def patients_col() -> Collection:
+    return get_database()['patients']
+
+
+def analyses_col() -> Collection:
+    return get_database()['ecg_analyses']
+
+
+def reports_col() -> Collection:
+    return get_database()['reports']
+
+
+# ── ID helpers ────────────────────────────────────────────────────────────────
+def _oid(val) -> Optional[ObjectId]:
+    """Safely convert a string to ObjectId, returning None on failure."""
+    try:
+        return ObjectId(str(val)) if val else None
+    except (InvalidId, Exception):
+        return None
+
+
+# ── Serialisers ───────────────────────────────────────────────────────────────
+def _patient_to_dict(doc: dict) -> dict:
+    if not doc:
+        return {}
+    doc = dict(doc)
+    doc['_id'] = str(doc['_id'])
+    if isinstance(doc.get('created_at'), datetime):
+        doc['created_at'] = doc['created_at'].isoformat()
+    if isinstance(doc.get('updated_at'), datetime):
+        doc['updated_at'] = doc['updated_at'].isoformat()
+    # Count analyses inline
+    doc['total_analyses'] = analyses_col().count_documents(
+        {'patient_id': doc.get('patient_id', '')}
+    )
+    return doc
+
+
+def _analysis_to_dict(doc: dict) -> dict:
+    if not doc:
+        return {}
+    doc = dict(doc)
+    doc['_id'] = str(doc['_id'])
+    if isinstance(doc.get('analysis_timestamp'), datetime):
+        doc['analysis_timestamp'] = doc['analysis_timestamp'].isoformat()
+    return doc
+
+
+# ── Initialise DB (indexes + seed data) ──────────────────────────────────────
+_SAMPLE_PATIENTS = [
+    {
+        'patient_id': 'PATIENT_001',
+        'name':       'John Smith',
+        'age':        58,
+        'gender':     'Male',
+        'contact_info':    'john.smith@example.com',
+        'medical_history': 'Hypertension, Type 2 Diabetes',
+        'created_at':      datetime.now(),
+        'updated_at':      datetime.now(),
+    },
+    {
+        'patient_id': 'PATIENT_002',
+        'name':       'Sarah Johnson',
+        'age':        45,
+        'gender':     'Female',
+        'contact_info':    'sarah.j@example.com',
+        'medical_history': 'Previous MI, Stent placement 2022',
+        'created_at':      datetime.now(),
+        'updated_at':      datetime.now(),
+    },
+    {
+        'patient_id': 'PATIENT_003',
+        'name':       'Mike Chen',
+        'age':        67,
+        'gender':     'Male',
+        'contact_info':    'mchen@example.com',
+        'medical_history': 'Atrial Fibrillation, Warfarin therapy',
+        'created_at':      datetime.now(),
+        'updated_at':      datetime.now(),
+    },
+    {
+        'patient_id': 'PATIENT_004',
+        'name':       'Emma Wilson',
+        'age':        34,
+        'gender':     'Female',
+        'contact_info':    'ewilson@example.com',
+        'medical_history': 'No significant history',
+        'created_at':      datetime.now(),
+        'updated_at':      datetime.now(),
+    },
+]
+
+
+def init_database() -> None:
+    """Create indexes and seed sample patients if collection is empty."""
+    try:
+        col = patients_col()
+
+        # Indexes
+        col.create_index([('patient_id', ASCENDING)], unique=True, name='idx_patient_id')
+        analyses_col().create_index([('patient_id', ASCENDING)], name='idx_analysis_patient')
+        analyses_col().create_index([('analysis_timestamp', DESCENDING)], name='idx_analysis_ts')
+
+        # Seed sample patients (upsert by patient_id)
+        seeded = 0
+        for p in _SAMPLE_PATIENTS:
+            result = col.update_one(
+                {'patient_id': p['patient_id']},
+                {'$setOnInsert': p},
+                upsert=True,
+            )
+            if result.upserted_id:
+                seeded += 1
+
+        if seeded:
+            print(f'✅ Seeded {seeded} sample patient(s) into MongoDB')
+        print(f'✅ MongoDB connected — database: "{DB_NAME}"')
+
+    except Exception as exc:
+        print(f'⚠️  MongoDB init error: {exc}')
+        raise
+
+
+# ── Patient CRUD ──────────────────────────────────────────────────────────────
+def get_all_patients() -> list[dict]:
+    docs = list(patients_col().find({}).sort('name', ASCENDING))
+    return [_patient_to_dict(d) for d in docs]
+
+
+def get_patient(patient_id: str) -> Optional[dict]:
+    doc = patients_col().find_one({'patient_id': patient_id})
+    return _patient_to_dict(doc) if doc else None
+
+
+def create_patient(data: dict) -> dict:
+    data['created_at'] = datetime.now()
+    data['updated_at'] = datetime.now()
+    result = patients_col().insert_one(data)
+    return _patient_to_dict(patients_col().find_one({'_id': result.inserted_id}))
+
+
+def update_patient(patient_id: str, data: dict) -> Optional[dict]:
+    data['updated_at'] = datetime.now()
+    patients_col().update_one({'patient_id': patient_id}, {'$set': data})
+    return get_patient(patient_id)
+
+
+def delete_patient(patient_id: str) -> bool:
+    result = patients_col().delete_one({'patient_id': patient_id})
+    # Cascade-delete related analyses
+    analyses_col().delete_many({'patient_id': patient_id})
+    return result.deleted_count > 0
+
+
+# ── ECG Analysis CRUD ─────────────────────────────────────────────────────────
+def save_analysis(data: dict) -> dict:
+    """Insert a new ECG analysis document and return it serialised."""
+    data['analysis_timestamp'] = datetime.now()
+    result = analyses_col().insert_one(data)
+    doc = analyses_col().find_one({'_id': result.inserted_id})
+    return _analysis_to_dict(doc)
+
+
+def get_patient_analyses(patient_id: str, limit: int = 50) -> list[dict]:
+    docs = list(
+        analyses_col()
+        .find({'patient_id': patient_id})
+        .sort('analysis_timestamp', DESCENDING)
+        .limit(limit)
+    )
+    return [_analysis_to_dict(d) for d in docs]
+
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+def get_stats() -> dict:
+    total_patients = patients_col().count_documents({})
+    total_analyses = analyses_col().count_documents({})
+    risk_breakdown = {
+        'Low':    analyses_col().count_documents({'risk_level': 'Low'}),
+        'Medium': analyses_col().count_documents({'risk_level': 'Medium'}),
+        'High':   analyses_col().count_documents({'risk_level': 'High'}),
+    }
+    return {
+        'total_patients':  total_patients,
+        'total_analyses':  total_analyses,
+        'risk_breakdown':  risk_breakdown,
+    }
