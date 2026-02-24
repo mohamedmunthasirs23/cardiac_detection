@@ -34,6 +34,7 @@ try:
         get_all_patients, get_patient, create_patient,
         update_patient, delete_patient, save_analysis, get_patient_analyses,
         get_stats as mongo_get_stats,
+        get_database,
     )
     # Quick connection probe
     from app.mongodb_database import get_client
@@ -136,8 +137,7 @@ def _load_registered_users():
     if not _USE_MONGO:
         return
     try:
-        from app.mongodb_database import get_client
-        _db = get_client()['cardiac_db']
+        _db = get_database()
         for doc in _db.users.find({}, {'_id': 0}):
             username = doc.get('username')
             if username and username not in USERS:
@@ -335,6 +335,21 @@ def login():
         remember = bool(request.form.get('remember'))
 
         user = USERS.get(username)
+        # ── Fallback: check MongoDB directly if not in memory (sync for Render workers) ──
+        if not user and _USE_MONGO:
+            try:
+                doc = get_database().users.find_one({'username': username})
+                if doc:
+                    user = {
+                        'password':     doc.get('password', ''),
+                        'role':         doc.get('role', 'User'),
+                        'name':         doc.get('name', username),
+                        'access_level': doc.get('access_level', 'viewer'),
+                    }
+                    USERS[username] = user  # cache it
+            except Exception as e:
+                print(f"⚠️  Login DB lookup failed: {e}")
+
         if user and user['password'] == password:
             session['username']     = username
             session['role']         = user['role']
@@ -412,8 +427,7 @@ def register():
     # Persist to MongoDB so the account survives restarts
     if _USE_MONGO:
         try:
-            from app.mongodb_database import get_client
-            _db = get_client()['cardiac_db']
+            _db = get_database()
             _db.users.update_one(
                 {'username': username},
                 {'$set': {**new_user, 'username': username}},
