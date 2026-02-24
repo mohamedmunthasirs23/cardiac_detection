@@ -34,14 +34,22 @@ try:
         get_all_patients, get_patient, create_patient,
         update_patient, delete_patient, save_analysis, get_patient_analyses,
         get_stats as mongo_get_stats,
-        get_database,
+        get_database, get_client, MONGO_URI
     )
-    # Quick connection probe
-    from app.mongodb_database import get_client
-    get_client().admin.command('ping')   # raises if MongoDB offline
-    _USE_MONGO = True
-    init_database = _mongo_init
-    print("✅ MongoDB connected — patient data stored in MongoDB")
+    
+    # Enable MongoDB if URI is provided, even if the first ping is slow
+    if MONGO_URI:
+        _USE_MONGO = True
+        init_database = _mongo_init
+        try:
+            # Optional probe — we'll print a warning but not disable Mongo if it fails
+            get_client().admin.command('ping')
+            print("✅ MongoDB connected — data stored in MongoDB Atlas")
+        except Exception as _probe_err:
+            print(f"⚠️  MongoDB connected but ping failed ({_probe_err!s:.60}) — will retry on request")
+    else:
+        raise ValueError("No MONGO_URI provided")
+
 except Exception as _mongo_err:
     print(f"⚠️  MongoDB unavailable ({_mongo_err!s:.80}) — falling back to SQLite")
     from app.database import init_database, get_db, get_session, Patient, ECGAnalysis

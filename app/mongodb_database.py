@@ -11,6 +11,7 @@ Collections:
 from __future__ import annotations
 
 import os
+import urllib.parse
 from datetime import datetime
 from typing import Optional
 
@@ -21,8 +22,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 # ── Connection config ─────────────────────────────────────────────────────────
-MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/')
-DB_NAME   = os.environ.get('MONGO_DB',  'cardiac_monitor')
+MONGO_URI = os.environ.get('MONGO_URI')
+DB_NAME   = os.environ.get('MONGO_DB', 'cardiac_monitor')
 
 _client: Optional[MongoClient] = None
 _db: Optional[Database] = None
@@ -31,7 +32,22 @@ _db: Optional[Database] = None
 def get_client() -> MongoClient:
     global _client
     if _client is None:
-        _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=4000)
+        uri = MONGO_URI
+        if uri and '://' in uri and '@' in uri:
+            try:
+                # Handle special characters in password automatically
+                # Format: mongodb(+srv)://user:pass@host/...
+                prefix, rest = uri.split('://', 1)
+                auth_part, host_part = rest.rsplit('@', 1)
+                if ':' in auth_part:
+                    user, pwd = auth_part.split(':', 1)
+                    # Only encode if it's not already encoded (%)
+                    if '%' not in pwd:
+                        pwd = urllib.parse.quote_plus(pwd)
+                    uri = f"{prefix}://{user}:{pwd}@{host_part}"
+            except Exception:
+                pass  # Fallback to raw URI if parsing fails
+        _client = MongoClient(uri, serverSelectionTimeoutMS=4000)
     return _client
 
 
