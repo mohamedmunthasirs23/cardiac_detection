@@ -12,6 +12,9 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import numpy as np
 from functools import wraps
