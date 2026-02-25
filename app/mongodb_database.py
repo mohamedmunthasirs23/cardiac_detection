@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from pathlib import Path
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -29,6 +31,8 @@ _client: Optional[MongoClient] = None
 _db: Optional[Database] = None
 
 
+import certifi
+
 def get_client() -> MongoClient:
     global _client
     if _client is None:
@@ -36,18 +40,26 @@ def get_client() -> MongoClient:
         if uri and '://' in uri and '@' in uri:
             try:
                 # Handle special characters in password automatically
-                # Format: mongodb(+srv)://user:pass@host/...
                 prefix, rest = uri.split('://', 1)
                 auth_part, host_part = rest.rsplit('@', 1)
                 if ':' in auth_part:
                     user, pwd = auth_part.split(':', 1)
-                    # Only encode if it's not already encoded (%)
                     if '%' not in pwd:
                         pwd = urllib.parse.quote_plus(pwd)
                     uri = f"{prefix}://{user}:{pwd}@{host_part}"
             except Exception:
-                pass  # Fallback to raw URI if parsing fails
-        _client = MongoClient(uri, serverSelectionTimeoutMS=4000)
+                pass
+
+        _client = MongoClient(
+            uri,
+            serverSelectionTimeoutMS=20000,
+            tlsAllowInvalidCertificates=True,
+            tlsAllowInvalidHostnames=True,
+            connect=False,  # Lazy connect to avoid startup hang
+            retryWrites=True,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000
+        )
     return _client
 
 
@@ -69,6 +81,10 @@ def analyses_col() -> Collection:
 
 def reports_col() -> Collection:
     return get_database()['reports']
+
+
+def users_col() -> Collection:
+    return get_database()['users']
 
 
 # ── ID helpers ────────────────────────────────────────────────────────────────

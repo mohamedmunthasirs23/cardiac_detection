@@ -3,7 +3,11 @@ Advanced Flask application with WebSocket support for real-time ECG monitoring.
 Includes Explainable AI features and professional-grade capabilities.
 """
 
-from __future__ import annotations
+# ── eventlet monkey-patch MUST be first (required for gunicorn eventlet worker) ─
+import eventlet
+eventlet.monkey_patch()
+
+
 
 import json
 import io
@@ -34,7 +38,8 @@ try:
         get_all_patients, get_patient, create_patient,
         update_patient, delete_patient, save_analysis, get_patient_analyses,
         get_stats as mongo_get_stats,
-        get_database, get_client, MONGO_URI
+        get_database, get_client, MONGO_URI,
+        users_col
     )
     
     # Enable MongoDB if URI is provided, even if the first ping is slow
@@ -136,30 +141,76 @@ else:
     print("\n✅ ML mode — Ensemble / scikit-learn model active")
 print("=" * 60 + "\n")
 
-print("📊 Initialising database …")
-init_database()
+# ── Initialising database ───────────────────────────────────────────────────
+try:
+    print("📊 Initialising database …")
+    init_database()
+except Exception as init_err:
+    if _USE_MONGO:
+        print(f"⚠️  MongoDB initialization failed: {init_err}")
+        print("🔄 Falling back to local SQLite database...")
+        _USE_MONGO = False
+        # Re-import SQLite implementation
+        from app.database import (
+            init_database as sqlite_init,
+            get_db, get_session, Patient, ECGAnalysis
+        )
+        init_database = sqlite_init
+        init_database()
+    else:
+        print(f"❌ Database initialization failed: {init_err}")
+        raise
 
 # ── Load persisted users from MongoDB ────────────────────────────────────────
+# ── Local User Persistence (Security Fallback) ────────────────────────────────
+_USERS_FILE = Path(__file__).parent.parent / 'data' / 'local_users.json'
+
+def _save_local_users():
+    """Save the USERS dictionary to a local JSON file as a fallback."""
+    try:
+        _USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_USERS_FILE, 'w') as f:
+            json.dump(USERS, f, indent=4)
+    except Exception as e:
+        print(f"⚠️  Could not save local user fallback: {e}")
+
 def _load_registered_users():
-    """On startup, read any previously registered users from MongoDB into USERS."""
+    """On startup, read users from MongoDB or local JSON fallback."""
+    # 1. Load from local JSON first (ensures speed and baseline stability)
+    if _USERS_FILE.exists():
+        try:
+            with open(_USERS_FILE, 'r') as f:
+                data = json.load(f)
+                USERS.update(data)
+                print(f"👥 Loaded {len(data)} user(s) from local cache")
+        except Exception as e:
+            print(f"⚠️  Could not load local users: {e}")
+
+    # 2. Try loading from MongoDB
     if not _USE_MONGO:
         return
     try:
         _db = get_database()
-        for doc in _db.users.find({}, {'_id': 0}):
+        cursor = _db.users.find({}, {'_id': 0})
+        count = 0
+        for doc in cursor:
             username = doc.get('username')
-            if username and username not in USERS:
+            if username:
                 USERS[username] = {
                     'password':     doc.get('password', ''),
                     'role':         doc.get('role', 'User'),
                     'name':         doc.get('name', username),
                     'access_level': doc.get('access_level', 'viewer'),
                 }
-        count = _db.users.count_documents({})
+                count += 1
+        
+        # Ensure index on users
+        _db.users.create_index([('username', 1)], unique=True)
+        
         if count:
-            print(f"👥 Loaded {count} registered user(s) from MongoDB")
+            print(f"👥 Sync'd {count} user(s) from MongoDB Atlas")
     except Exception as e:
-        print(f"⚠️  Could not load users from MongoDB: {e}")
+        print(f"⚠️  Could not sync users from MongoDB: {e}")
 
 _load_registered_users()
 
@@ -346,7 +397,7 @@ def login():
         # ── Fallback: check MongoDB directly if not in memory (sync for Render workers) ──
         if not user and _USE_MONGO:
             try:
-                doc = get_database().users.find_one({'username': username})
+                doc = users_col().find_one({'username': username})
                 if doc:
                     user = {
                         'password':     doc.get('password', ''),
@@ -431,12 +482,12 @@ def register():
         'access_level': access_level,
     }
     USERS[username] = new_user
+    _save_local_users()
 
     # Persist to MongoDB so the account survives restarts
     if _USE_MONGO:
         try:
-            _db = get_database()
-            _db.users.update_one(
+            users_col().update_one(
                 {'username': username},
                 {'$set': {**new_user, 'username': username}},
                 upsert=True,
@@ -658,6 +709,7 @@ def handle_ecg_stream(data):
 
     except Exception as exc:
         emit('error', {'message': str(exc)})
+
 
 
 # ── Report generation ──────────────────────────────────────────────────────────
