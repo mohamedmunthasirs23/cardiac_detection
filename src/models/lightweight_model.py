@@ -14,7 +14,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
 
-# ── Feature names (must stay in sync with extract_features) ─────────────────
+# -- Feature names (must stay in sync with extract_features) -----------------
 _FEATURE_NAMES = [
     # Statistical
     "Mean", "Std", "Min", "Max", "Median",
@@ -39,7 +39,7 @@ _NUM_FEATURES = len(_FEATURE_NAMES)
 class LightweightECGClassifier:
     """
     Lightweight ECG classifier using Random Forest.
-    Works without TensorFlow — compatible with Python 3.11+.
+    Works without TensorFlow - compatible with Python 3.11+.
     """
 
     CLASS_LABELS: Dict[int, str] = {
@@ -55,14 +55,14 @@ class LightweightECGClassifier:
             max_depth=20,
             min_samples_leaf=2,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
         )
         self.scaler = StandardScaler()
         self.is_trained: bool = False
         # backward-compat property kept for external code
         self.class_labels = self.CLASS_LABELS
 
-    # ── Feature extraction ────────────────────────────────────────────────────
+    # -- Feature extraction ----------------------------------------------------
     @staticmethod
     def get_feature_names() -> List[str]:
         """Return human-readable feature names matching the feature vector."""
@@ -83,7 +83,7 @@ class LightweightECGClassifier:
 
         features: List[float] = []
 
-        # ── Statistical ──────────────────────────────────────────────────────
+        # -- Statistical ------------------------------------------------------
         mean = float(np.mean(sig))
         std = float(np.std(sig)) or 1e-9
         features += [
@@ -92,12 +92,12 @@ class LightweightECGClassifier:
             float(np.percentile(sig, 25)), float(np.percentile(sig, 75)),
         ]
 
-        # ── Energy & zero-crossings ───────────────────────────────────────────
+        # -- Energy & zero-crossings -------------------------------------------
         energy = float(np.sum(sig ** 2))
         zero_crossings = int(np.sum(np.diff(np.sign(sig)) != 0))
         features += [energy, float(zero_crossings)]
 
-        # ── Peak / RR / Heart rate ────────────────────────────────────────────
+        # -- Peak / RR / Heart rate --------------------------------------------
         threshold = mean + 0.5 * std
         peak_mask = sig > threshold
         peaks = int(np.sum(peak_mask))
@@ -114,7 +114,7 @@ class LightweightECGClassifier:
 
         features += [float(peaks), float(rr_interval), heart_rate]
 
-        # ── Time-domain HRV ───────────────────────────────────────────────────
+        # -- Time-domain HRV ---------------------------------------------------
         diffs = np.diff(sig)
         rmssd = float(np.sqrt(np.mean(diffs ** 2))) if len(diffs) > 0 else 0.0
         pnn50 = (
@@ -123,10 +123,10 @@ class LightweightECGClassifier:
         )
         features += [rmssd, pnn50]
 
-        # ── Frequency-domain ─────────────────────────────────────────────────
+        # -- Frequency-domain -------------------------------------------------
         fft_vals = np.fft.rfft(sig)
         power = np.abs(fft_vals) ** 2
-        freqs = np.fft.rfftfreq(n, d=1.0 / (n / 10.0))  # assume 10 s → fs = n/10
+        freqs = np.fft.rfftfreq(n, d=1.0 / (n / 10.0))  # assume 10 s -> fs = n/10
 
         lf_mask = (freqs >= 0.04) & (freqs < 0.15)
         hf_mask = (freqs >= 0.15) & (freqs < 0.4)
@@ -141,13 +141,13 @@ class LightweightECGClassifier:
 
         features += [lf_power, hf_power, spectral_entropy]
 
-        # ── Shape (skewness & kurtosis) ───────────────────────────────────────
+        # -- Shape (skewness & kurtosis) ---------------------------------------
         normalised = (sig - mean) / std
         skewness = float(np.mean(normalised ** 3))
         kurtosis = float(np.mean(normalised ** 4))
         features += [skewness, kurtosis]
 
-        # ── Hjorth parameters ────────────────────────────────────────────────
+        # -- Hjorth parameters ------------------------------------------------
         activity = float(np.var(sig))
         d1 = np.diff(sig)
         mobility = float(np.sqrt(np.var(d1) / (activity or 1e-9)))
@@ -162,16 +162,16 @@ class LightweightECGClassifier:
         )
         return arr
 
-    # ── Training ──────────────────────────────────────────────────────────────
+    # -- Training --------------------------------------------------------------
     def train(self, X_train: List[np.ndarray], y_train: List[int]) -> None:
         """Train on a list of raw ECG signals with integer class labels."""
         X_features = np.array([self.extract_features(s) for s in X_train])
         X_scaled = self.scaler.fit_transform(X_features)
         self.model.fit(X_scaled, y_train)
         self.is_trained = True
-        print(f"✓ Model trained on {len(X_train)} samples | {_NUM_FEATURES} features")
+        print(f"[OK] Model trained on {len(X_train)} samples | {_NUM_FEATURES} features")
 
-    # ── Prediction ────────────────────────────────────────────────────────────
+    # -- Prediction ------------------------------------------------------------
     def predict(self, ecg_signal: np.ndarray) -> dict:
         """
         Predict cardiac condition from a raw ECG signal.
@@ -190,7 +190,7 @@ class LightweightECGClassifier:
         pred_class = int(self.model.predict(features_scaled)[0])
         proba = self.model.predict_proba(features_scaled)[0]
 
-        # Shannon entropy → normalised uncertainty
+        # Shannon entropy -> normalised uncertainty
         entropy = -np.sum(proba * np.log(proba + 1e-12))
         n_classes = len(self.CLASS_LABELS)
         uncertainty = float(entropy / np.log(n_classes)) if n_classes > 1 else 0.0
@@ -225,7 +225,7 @@ class LightweightECGClassifier:
             probs = {'Normal': 0.15, 'Arrhythmia': 0.70,
                      'Myocardial Infarction': 0.10, 'Other Abnormality': 0.05}
         elif kurtosis > 6:
-            # High kurtosis → possible MI (sharp ST elevation features)
+            # High kurtosis -> possible MI (sharp ST elevation features)
             pred = 2
             probs = {'Normal': 0.10, 'Arrhythmia': 0.20,
                      'Myocardial Infarction': 0.60, 'Other Abnormality': 0.10}
@@ -246,7 +246,7 @@ class LightweightECGClassifier:
             'feature_importance': [1.0 / _NUM_FEATURES] * _NUM_FEATURES,
         }
 
-    # ── Persistence ───────────────────────────────────────────────────────────
+    # -- Persistence -----------------------------------------------------------
     def save(self, filepath: Path | str) -> None:
         """Serialize model to disk."""
         payload = {
@@ -258,7 +258,7 @@ class LightweightECGClassifier:
         }
         with open(filepath, 'wb') as fh:
             pickle.dump(payload, fh)
-        print(f"✓ Model saved → {filepath}")
+        print(f"[OK] Model saved -> {filepath}")
 
     def load(self, filepath: Path | str) -> None:
         """Deserialize model from disk."""
@@ -268,13 +268,13 @@ class LightweightECGClassifier:
         self.scaler = payload['scaler']
         self.is_trained = payload['is_trained']
         self.class_labels = payload.get('class_labels', self.CLASS_LABELS)
-        print(f"✓ Model loaded ← {filepath}  (trained={self.is_trained})")
+        print(f"[OK] Model loaded   {filepath}  (trained={self.is_trained})")
 
 
-# ── Demo training helper ─────────────────────────────────────────────────────
+# -- Demo training helper -----------------------------------------------------
 def train_demo_model() -> LightweightECGClassifier:
     """Train a demo classifier on synthetic ECG-like signals and save it."""
-    print("🔧 Training demo model with synthetic data …")
+    print("  Training demo model with synthetic data  ")
     np.random.seed(42)
     n_samples, signal_length = 1000, 3600
     t = np.linspace(0, 10, signal_length)
@@ -311,17 +311,17 @@ def train_demo_model() -> LightweightECGClassifier:
     model_path = Path(__file__).parent.parent.parent / 'models' / 'lightweight_ecg_model.pkl'
     model_path.parent.mkdir(parents=True, exist_ok=True)
     clf.save(model_path)
-    print("✓ Demo model trained and saved!")
+    print("[OK] Demo model trained and saved!")
     return clf
 
 
 if __name__ == "__main__":
     model = train_demo_model()
-    print("\n🧪 Testing prediction …")
+    print("\n  Testing prediction  ")
     test_signal = np.random.randn(3600) * 0.5
     result = model.predict(test_signal)
     print(f"  Prediction  : {result['prediction']}")
     print(f"  Confidence  : {result['confidence']:.2f}")
     print(f"  Uncertainty : {result['uncertainty']:.2f}")
     print(f"  Features    : {len(result['feature_importance'])} importance values")
-    print("✓ Model is working!")
+    print("[OK] Model is working!")

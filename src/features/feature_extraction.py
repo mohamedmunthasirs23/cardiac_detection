@@ -270,4 +270,4 @@ if __name__ == "__main__":
     for name, value in list(features.items())[:10]:
         print(f"  {name}: {value:.4f}")
     print("  ...")
-    print("✓ Feature extraction working correctly!")
+    print("[OK] Feature extraction working correctly!")

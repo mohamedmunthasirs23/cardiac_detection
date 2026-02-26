@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Button Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #0f172a;
+            color: white;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+        }
+
+        button:hover {
+            background: #1e40af;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1e293b;
+            border-radius: 8px;
+            min-height: 100px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 Button Test Page</h1>
+    <p>This page tests if the buttons are working correctly.</p>
+
+    <button id="patientsBtn">👥 Patients</button>
+    <button id="settingsBtn">⚙️ Settings</button>
+    <button id="testBtn">🧪 Test Button</button>
+
+    <div class="result" id="result">
+        <strong>Click a button to test...</strong>
+    </div>
+
+    <script>
+        const patientsBtn = document.getElementById('patientsBtn');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const testBtn = document.getElementById('testBtn');
+        const result = document.getElementById('result');
+
+        function showResult(message) {
+            result.innerHTML = `<strong>${message}</strong><br>Time: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function showPatientsModal() {
+            showResult('✅ PATIENTS BUTTON CLICKED! Function executed successfully.');
+        }
+
+        function showSettingsModal() {
+            showResult('✅ SETTINGS BUTTON CLICKED! Function executed successfully.');
+        }
+
+        function testFunction() {
+            showResult('✅ TEST BUTTON CLICKED! This proves JavaScript is working.');
+        }
+
+        // Log button status
+        console.log('Patients button:', patientsBtn);
+        console.log('Settings button:', settingsBtn);
+        console.log('Test button:', testBtn);
+
+        // Add event listeners
+        if (patientsBtn) {
+            patientsBtn.addEventListener('click', showPatientsModal);
+            console.log('✅ Patients button event listener added');
+        } else {
+            console.error('❌ Patients button not found!');
+        }
+
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', showSettingsModal);
+            console.log('✅ Settings button event listener added');
+        } else {
+            console.error('❌ Settings button not found!');
+        }
+
+        if (testBtn) {
+            testBtn.addEventListener('click', testFunction);
+            console.log('✅ Test button event listener added');
+        }
+
+        // Show initial status
+        showResult('Page loaded successfully. All buttons ready. Check console for details.');
+    </script>
+</body>
+
+</html>

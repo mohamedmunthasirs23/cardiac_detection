@@ -17,7 +17,7 @@ from sqlalchemy.orm import (
     DeclarativeBase, sessionmaker, relationship, Session
 )
 
-# ── Database path ────────────────────────────────────────────────────────────
+# -- Database path ------------------------------------------------------------
 DB_DIR = Path(__file__).parent.parent / 'data'
 DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DB_DIR / 'cardiac_data.db'
@@ -41,12 +41,12 @@ def set_sqlite_pragma(dbapi_connection, _connection_record):
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
-# ── ORM Base ─────────────────────────────────────────────────────────────────
+# -- ORM Base -----------------------------------------------------------------
 class Base(DeclarativeBase):
     pass
 
 
-# ── Models ───────────────────────────────────────────────────────────────────
+# -- Models -------------------------------------------------------------------
 class Patient(Base):
     """Patient information table."""
 
@@ -157,7 +157,7 @@ class GeneratedReport(Base):
         }
 
 
-# ── Session helpers ───────────────────────────────────────────────────────────
+# -- Session helpers -----------------------------------------------------------
 @contextmanager
 def get_db() -> Session:
     """Context-manager database session (preferred)."""
@@ -177,7 +177,7 @@ def get_session() -> Session:
     return SessionLocal()
 
 
-# ── Initialization ────────────────────────────────────────────────────────────
+# -- Initialization ------------------------------------------------------------
 _SAMPLE_PATIENTS = [
     {
         'patient_id': 'P001',
@@ -209,7 +209,7 @@ _SAMPLE_PATIENTS = [
 def init_database() -> None:
     """Create all tables and seed sample patients if the table is empty."""
     Base.metadata.create_all(engine)
-    print(f"✅ Database initialized at {DB_PATH}")
+    print(f"[OK] Database initialized at {DB_PATH}")
 
     with get_db() as session:
         existing_ids = {
@@ -222,7 +222,7 @@ def init_database() -> None:
         ]
         if new_patients:
             session.add_all(new_patients)
-            print(f"✅ Seeded {len(new_patients)} sample patient(s)")
+            print(f"[OK] Seeded {len(new_patients)} sample patient(s)")
 
 
 if __name__ == "__main__":

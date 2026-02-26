@@ -3,9 +3,9 @@ MongoDB database layer for Cardiac Monitor Pro.
 Replaces the SQLite/SQLAlchemy layer with PyMongo.
 
 Collections:
-  - patients       → Patient records
-  - ecg_analyses   → ECG analysis results
-  - reports        → Generated report metadata
+  - patients       -> Patient records
+  - ecg_analyses   -> ECG analysis results
+  - reports        -> Generated report metadata
 """
 
 from __future__ import annotations
@@ -23,21 +23,82 @@ from pymongo.database import Database
 from bson import ObjectId
 from bson.errors import InvalidId
 
-# ── Connection config ─────────────────────────────────────────────────────────
+# -- Connection config ---------------------------------------------------------
 MONGO_URI = os.environ.get('MONGO_URI')
 DB_NAME   = os.environ.get('MONGO_DB', 'cardiac_monitor')
 
 _client: Optional[MongoClient] = None
 _db: Optional[Database] = None
 
-
+import dns.resolver
 import certifi
+
+def _resolve_srv_to_standard(uri: str) -> str:
+    """
+    Workaround for Python 3.14 + Windows access violations in SRV processing.
+    Converts mongodb+srv://... to a standard multi-shard mongodb://... string.
+    """
+    if not uri.startswith('mongodb+srv://'):
+        return uri
+        
+    try:
+        # 1. Parse auth and cluster
+        parts = uri.replace('mongodb+srv://', '').split('/', 1)
+        auth_and_cluster = parts[0]
+        params = parts[1] if len(parts) > 1 else ''
+        
+        if '@' not in auth_and_cluster:
+            return uri # No auth, handle as-is
+            
+        auth, cluster = auth_and_cluster.rsplit('@', 1)
+        
+        # 2. Resolve SRV record
+        print(f"[DB] Resolving SRV workaround for {cluster}...")
+        try:
+            answers = dns.resolver.resolve(f'_mongodb._tcp.{cluster}', 'SRV')
+            print("[DB] SRV resolution successful.")
+        except Exception as resolver_err:
+            print(f"[ERROR] Resolver failed: {resolver_err}")
+            return uri
+            
+        shards = [f"{rdata.target.to_text().rstrip('.')}:{rdata.port}" for rdata in answers]
+        print(f"[DB] Found {len(shards)} shards.")
+        
+        if not shards:
+            return uri
+            
+        shard_str = ",".join(shards)
+        print(f"[DB] Shard string: {shard_str[:60]}...")
+        
+        # 3. Construct standard URI
+        # Note: We strip 'appName' and other SRV-specific options as standard ones might differ
+        # but Atlas usually supports 'ssl=true' and 'authSource=admin'
+        query_parts = []
+        if '?' in params:
+            base_params = params.split('?', 1)[1]
+            query_parts = [p for p in base_params.split('&') if not p.startswith('appName=')]
+            
+        if 'ssl=true' not in query_parts and 'tls=true' not in query_parts:
+            query_parts.append('ssl=true')
+        if 'authSource=' not in "".join(query_parts):
+            query_parts.append('authSource=admin')
+            
+        new_uri = f"mongodb://{auth}@{shard_str}/?{'&'.join(query_parts)}"
+        print(f"[DB] Using expanded standard URI (bypass SRV crash)")
+        return new_uri
+        
+    except Exception as e:
+        print(f"[WARNING] SRV resolution workaround failed: {e}")
+        return uri
 
 def get_client() -> MongoClient:
     global _client
     if _client is None:
         uri = MONGO_URI
-        if uri and '://' in uri and '@' in uri:
+        if uri:
+            uri = _resolve_srv_to_standard(uri)
+            
+        if uri and '://' in uri and '@' in uri and 'mongodb+srv' not in uri:
             try:
                 # Handle special characters in password automatically
                 prefix, rest = uri.split('://', 1)
@@ -52,13 +113,8 @@ def get_client() -> MongoClient:
 
         _client = MongoClient(
             uri,
-            serverSelectionTimeoutMS=20000,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True,
-            connect=False,  # Lazy connect to avoid startup hang
-            retryWrites=True,
-            connectTimeoutMS=10000,
-            socketTimeoutMS=10000
+            serverSelectionTimeoutMS=10000,
+            tlsCAFile=certifi.where()
         )
     return _client
 
@@ -70,7 +126,7 @@ def get_database() -> Database:
     return _db
 
 
-# ── Collection accessors ──────────────────────────────────────────────────────
+# -- Collection accessors ------------------------------------------------------
 def patients_col() -> Collection:
     return get_database()['patients']
 
@@ -87,7 +143,7 @@ def users_col() -> Collection:
     return get_database()['users']
 
 
-# ── ID helpers ────────────────────────────────────────────────────────────────
+# -- ID helpers ----------------------------------------------------------------
 def _oid(val) -> Optional[ObjectId]:
     """Safely convert a string to ObjectId, returning None on failure."""
     try:
@@ -96,7 +152,7 @@ def _oid(val) -> Optional[ObjectId]:
         return None
 
 
-# ── Serialisers ───────────────────────────────────────────────────────────────
+# -- Serialisers ---------------------------------------------------------------
 def _patient_to_dict(doc: dict) -> dict:
     if not doc:
         return {}
@@ -123,7 +179,7 @@ def _analysis_to_dict(doc: dict) -> dict:
     return doc
 
 
-# ── Initialise DB (indexes + seed data) ──────────────────────────────────────
+# -- Initialise DB (indexes + seed data) --------------------------------------
 _SAMPLE_PATIENTS = [
     {
         'patient_id': 'PATIENT_001',
@@ -190,15 +246,15 @@ def init_database() -> None:
                 seeded += 1
 
         if seeded:
-            print(f'✅ Seeded {seeded} sample patient(s) into MongoDB')
-        print(f'✅ MongoDB connected — database: "{DB_NAME}"')
+            print(f'[OK] Seeded {seeded} sample patient(s) into MongoDB')
+        print(f'[OK] MongoDB connected - database: "{DB_NAME}"')
 
     except Exception as exc:
-        print(f'⚠️  MongoDB init error: {exc}')
+        print(f'[ERROR] MongoDB init error: {exc}')
         raise
 
 
-# ── Patient CRUD ──────────────────────────────────────────────────────────────
+# -- Patient CRUD --------------------------------------------------------------
 def get_all_patients() -> list[dict]:
     docs = list(patients_col().find({}).sort('name', ASCENDING))
     return [_patient_to_dict(d) for d in docs]
@@ -229,7 +285,7 @@ def delete_patient(patient_id: str) -> bool:
     return result.deleted_count > 0
 
 
-# ── ECG Analysis CRUD ─────────────────────────────────────────────────────────
+# -- ECG Analysis CRUD ---------------------------------------------------------
 def save_analysis(data: dict) -> dict:
     """Insert a new ECG analysis document and return it serialised."""
     data['analysis_timestamp'] = datetime.now()
@@ -248,7 +304,7 @@ def get_patient_analyses(patient_id: str, limit: int = 50) -> list[dict]:
     return [_analysis_to_dict(d) for d in docs]
 
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
+# -- Stats ---------------------------------------------------------------------
 def get_stats() -> dict:
     total_patients = patients_col().count_documents({})
     total_analyses = analyses_col().count_documents({})

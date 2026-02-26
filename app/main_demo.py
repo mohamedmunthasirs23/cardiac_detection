@@ -16,7 +16,7 @@ CORS(app)
 
 # Demo mode - no model required
 print("\n" + "="*60)
-print("⚠️  RUNNING IN DEMO MODE (No TensorFlow)")
+print("[WARNING]   RUNNING IN DEMO MODE (No TensorFlow)")
 print("="*60)
 print("The interface will work, but predictions are simulated.")
 print("To use real ML models, install TensorFlow for Python 3.11 or lower.")
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     print("Starting Flask server...")
     print("Navigate to: http://localhost:5000")
-    print("\n⚠️  Running in DEMO mode - predictions are simulated")
+    print("\n[WARNING]   Running in DEMO mode - predictions are simulated")
     print("To use real ML models:")
     print("  1. Install Python 3.11 (TensorFlow not yet available for 3.14)")
     print("  2. Or wait for TensorFlow to support Python 3.14")

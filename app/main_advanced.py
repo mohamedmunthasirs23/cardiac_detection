@@ -1,18 +1,18 @@
-"""
-Advanced Flask application with WebSocket support for real-time ECG monitoring.
-Includes Explainable AI features and professional-grade capabilities.
-"""
+import os
+import sys
 
-# ── eventlet monkey-patch MUST be first (required for gunicorn eventlet worker) ─
-import eventlet
-eventlet.monkey_patch()
-
-
+# --- Windows Stability Fixes ---
+# 1. Prevent Access Violation (0xC0000005) from conflicting OpenMP runtimes
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+# 2. Prevent threading conflicts on Windows with heavy ML libraries
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import json
 import io
-import os
-import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -20,88 +20,64 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import numpy as np
-from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session, flash
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch
-from reportlab.pdfgen import canvas
+import numpy as np
+from functools import wraps
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+# Experimental Fix: Forcing SQLite as Python 3.14 + MongoDB Atlas + ML is unstable on Windows
 _USE_MONGO = False
-try:
-    from app.mongodb_database import (
-        init_database as _mongo_init,
-        get_all_patients, get_patient, create_patient,
-        update_patient, delete_patient, save_analysis, get_patient_analyses,
-        get_stats as mongo_get_stats,
-        get_database, get_client, MONGO_URI,
-        users_col
-    )
-    
-    # Enable MongoDB if URI is provided, even if the first ping is slow
-    if MONGO_URI:
-        _USE_MONGO = True
-        init_database = _mongo_init
-        try:
-            # Optional probe — we'll print a warning but not disable Mongo if it fails
-            get_client().admin.command('ping')
-            print("✅ MongoDB connected — data stored in MongoDB Atlas")
-        except Exception as _probe_err:
-            print(f"⚠️  MongoDB connected but ping failed ({_probe_err!s:.60}) — will retry on request")
-    else:
-        raise ValueError("No MONGO_URI provided")
+from app.database import init_database, get_db, get_session, Patient, ECGAnalysis
 
-except Exception as _mongo_err:
-    print(f"⚠️  MongoDB unavailable ({_mongo_err!s:.80}) — falling back to SQLite")
-    from app.database import init_database, get_db, get_session, Patient, ECGAnalysis
-
-# ── ML model loading ──────────────────────────────────────────────────────────
+# -- ML model loading (deferred to avoid conflicts on Windows) ---------------
 DEMO_MODE = True
 ml_model = None
 
-try:
-    from src.models.ensemble_model import AdvancedECGEnsemble
-
-    ml_model = AdvancedECGEnsemble()
-    model_path = Path(__file__).parent.parent / 'models' / 'ensemble_ecg_model.pkl'
-
-    if model_path.exists():
-        ml_model.load(model_path)
-        DEMO_MODE = False
-        print("✅ Advanced Ensemble model loaded!")
-    else:
-        raise FileNotFoundError("Ensemble model file not found")
-
-except Exception:
-    # Fallback: lightweight scikit-learn model
+def load_ml_models():
+    """Load ML models lazily to avoid library conflicts during startup."""
+    global DEMO_MODE, ml_model
     try:
-        from src.models.lightweight_model import LightweightECGClassifier
+        from src.models.ensemble_model import AdvancedECGEnsemble
 
-        ml_model = LightweightECGClassifier()
-        lw_path = Path(__file__).parent.parent / 'models' / 'lightweight_ecg_model.pkl'
+        ml_model = AdvancedECGEnsemble()
+        model_path = Path(__file__).parent.parent / 'models' / 'ensemble_ecg_model.pkl'
 
-        if lw_path.exists():
-            ml_model.load(lw_path)
+        if model_path.exists():
+            ml_model.load(model_path)
             DEMO_MODE = False
-            print("✅ Lightweight ML model loaded!")
+            print("[OK] Advanced Ensemble model loaded!")
         else:
-            print("⚠️  No model file found — using heuristic predictions")
-    except Exception as exc:
-        print(f"⚠️  Could not load any ML model: {exc}")
-        ml_model = None
+            raise FileNotFoundError("Ensemble model file not found")
+
+    except Exception:
+        # Fallback: lightweight scikit-learn model
+        try:
+            from src.models.lightweight_model import LightweightECGClassifier
+
+            ml_model = LightweightECGClassifier()
+            lw_path = Path(__file__).parent.parent / 'models' / 'lightweight_ecg_model.pkl'
+
+            if lw_path.exists():
+                ml_model.load(lw_path)
+                DEMO_MODE = False
+                print("[OK] Lightweight ML model loaded!")
+            else:
+                print("[WARNING] No model file found - using heuristic predictions")
+        except Exception as exc:
+            print(f"[WARNING] Could not load any ML model: {exc}")
+            ml_model = None
 
 
-# ── Flask / SocketIO setup ────────────────────────────────────────────────────
+# -- Flask / SocketIO setup ----------------------------------------------------
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('CARDIAC_SECRET_KEY', 'cardiac-monitor-secret-2024')
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# ── Users (demo credentials — replace with DB-backed auth in production) ──────
+# -- Users (demo credentials - replace with DB-backed auth in production) ------
 # access_level: 'admin' = full edit/create/delete  |  'viewer' = read-only
 USERS = {
     'admin':   {'password': 'admin123',   'role': 'Administrator', 'name': 'Admin User',    'access_level': 'admin'},
@@ -127,42 +103,49 @@ def admin_required(f):
         if 'username' not in session:
             return jsonify({'success': False, 'error': 'Authentication required'}), 401
         if session.get('access_level') != 'admin':
-            return jsonify({'success': False, 'error': 'Access denied — admin role required'}), 403
+            return jsonify({'success': False, 'error': 'Access denied - admin role required'}), 403
         return f(*args, **kwargs)
     return decorated
 
 print("\n" + "=" * 60)
-print("🫀 ADVANCED CARDIAC ABNORMALITY DETECTION SYSTEM")
+print("ADVANCED CARDIAC ABNORMALITY DETECTION SYSTEM")
 print("=" * 60)
-print("✨ Features: Real-time WebSocket | Explainable AI | PDF Reports")
+print("Features: Real-time WebSocket | Explainable AI | PDF Reports")
 if DEMO_MODE:
-    print("\n⚠️  Heuristic mode (ML model not loaded)")
+    print("\n[WARNING] Heuristic mode (ML model not loaded)")
 else:
-    print("\n✅ ML mode — Ensemble / scikit-learn model active")
+    print("\n[OK] ML mode - Ensemble / scikit-learn model active")
 print("=" * 60 + "\n")
 
-# ── Initialising database ───────────────────────────────────────────────────
-try:
-    print("📊 Initialising database …")
-    init_database()
-except Exception as init_err:
-    if _USE_MONGO:
-        print(f"⚠️  MongoDB initialization failed: {init_err}")
-        print("🔄 Falling back to local SQLite database...")
-        _USE_MONGO = False
-        # Re-import SQLite implementation
-        from app.database import (
-            init_database as sqlite_init,
-            get_db, get_session, Patient, ECGAnalysis
-        )
-        init_database = sqlite_init
-        init_database()
-    else:
-        print(f"❌ Database initialization failed: {init_err}")
-        raise
+# -- Initialising database & models (DISABLED for stability testing) ----------
+# try:
+#     print("[STATS] Initialising ML models...")
+#     load_ml_models()
+# 
+#     print("[STATS] Initialising database  ")
+#     init_database()
+#     
+# except Exception as init_err:
+#     if _USE_MONGO:
+#         print(f"[ERROR] MongoDB initialization failed:")
+#         import traceback
+#         traceback.print_exc()
+#         print("[SYSTEM] Falling back to local SQLite database...")
+#         _USE_MONGO = False
+#         # Re-import SQLite implementation
+#         from app.database import (
+#             init_database as sqlite_init,
+#             get_db, get_session, Patient, ECGAnalysis
+#         )
+#         init_database = sqlite_init
+#         init_database()
+#     else:
+#         print(f"  Database initialization failed: {init_err}")
+#         raise
 
-# ── Load persisted users from MongoDB ────────────────────────────────────────
-# ── Local User Persistence (Security Fallback) ────────────────────────────────
+
+# -- Load persisted users from MongoDB ----------------------------------------
+# -- Local User Persistence (Security Fallback) --------------------------------
 _USERS_FILE = Path(__file__).parent.parent / 'data' / 'local_users.json'
 
 def _save_local_users():
@@ -172,7 +155,7 @@ def _save_local_users():
         with open(_USERS_FILE, 'w') as f:
             json.dump(USERS, f, indent=4)
     except Exception as e:
-        print(f"⚠️  Could not save local user fallback: {e}")
+        print(f"[WARNING]   Could not save local user fallback: {e}")
 
 def _load_registered_users():
     """On startup, read users from MongoDB or local JSON fallback."""
@@ -182,9 +165,9 @@ def _load_registered_users():
             with open(_USERS_FILE, 'r') as f:
                 data = json.load(f)
                 USERS.update(data)
-                print(f"👥 Loaded {len(data)} user(s) from local cache")
+                print(f"[SYSTEM] Loaded {len(data)} user(s) from local cache")
         except Exception as e:
-            print(f"⚠️  Could not load local users: {e}")
+            print(f"[WARNING] Could not load local users: {e}")
 
     # 2. Try loading from MongoDB
     if not _USE_MONGO:
@@ -208,20 +191,20 @@ def _load_registered_users():
         _db.users.create_index([('username', 1)], unique=True)
         
         if count:
-            print(f"👥 Sync'd {count} user(s) from MongoDB Atlas")
+            print(f"[SYSTEM] Sync'd {count} user(s) from MongoDB Atlas")
     except Exception as e:
-        print(f"⚠️  Could not sync users from MongoDB: {e}")
+        print(f"[WARNING]   Could not sync users from MongoDB: {e}")
 
 _load_registered_users()
 
 active_sessions: dict = {}
 
-# ── Class labels ──────────────────────────────────────────────────────────────
+# -- Class labels --------------------------------------------------------------
 CLASS_LABELS = {0: 'Normal', 1: 'Arrhythmia', 2: 'Myocardial Infarction', 3: 'Other Abnormality'}
 MIN_SIGNAL_LENGTH = 100
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 def _compute_fft_band_power(signal: np.ndarray, fs: float, fmin: float, fmax: float) -> float:
     """Return integrated power in a frequency band using the FFT periodogram."""
     n = len(signal)
@@ -264,7 +247,7 @@ def _compute_risk_level(predicted_class: int, confidence: float) -> str:
     """Determine risk level from predicted class and model confidence."""
     if predicted_class == 0:
         return 'Low'
-    if predicted_class == 2:           # MI → always High
+    if predicted_class == 2:           # MI -> always High
         return 'High'
     # Arrhythmia or Other
     if confidence >= 0.75:
@@ -281,16 +264,16 @@ def generate_recommendations(predicted_class: int, features: dict) -> list[str]:
     if predicted_class == 0:  # Normal
         recs = ["Continue regular monitoring", "Maintain healthy lifestyle"]
         if hr > 100:
-            recs.append("Heart rate slightly elevated — consider stress evaluation")
+            recs.append("Heart rate slightly elevated - consider stress evaluation")
         elif hr < 50:
-            recs.append("Heart rate is low — consult a physician if symptomatic")
+            recs.append("Heart rate is low - consult a physician if symptomatic")
         recs.append("Schedule routine checkup in 6 months")
         return recs
 
     if predicted_class == 1:  # Arrhythmia
         return [
             "Consult a cardiologist promptly",
-            "Consider Holter monitoring for 24–48 hours",
+            "Consider Holter monitoring for 24 48 hours",
             "Avoid strenuous physical activity until assessed",
             "Monitor heart rate and rhythm regularly",
             "Review current medications with your physician",
@@ -298,9 +281,9 @@ def generate_recommendations(predicted_class: int, features: dict) -> list[str]:
 
     if predicted_class == 2:  # MI
         return [
-            "⚠️ Seek emergency medical attention immediately",
+            "[WARNING]  Seek emergency medical attention immediately",
             "Call emergency services (112/911) if chest pain is present",
-            "Do NOT drive yourself — wait for medical assistance",
+            "Do NOT drive yourself - wait for medical assistance",
             "Avoid all physical exertion",
             "Administer aspirin if not contraindicated",
         ]
@@ -321,13 +304,13 @@ def _extract_key_features(ecg_signal: np.ndarray) -> dict:
     n = len(ecg_signal)
     estimated_fs = n / 10.0       # assume 10-second strip
 
-    # ── R-peak detection (local maxima above adaptive threshold) ──────────
+    # -- R-peak detection (local maxima above adaptive threshold) ----------
     # A true R-peak must:
     #   1. Exceed mean + 0.6*std (adaptive threshold)
-    #   2. Be a local maximum in a ±min_sep window
+    #   2. Be a local maximum in a  min_sep window
     mean = float(np.mean(ecg_signal))
     std  = float(np.std(ecg_signal))
-    min_sep = max(1, int(estimated_fs * 0.33))   # min 330 ms between peaks (≈ 180 bpm max)
+    min_sep = max(1, int(estimated_fs * 0.33))   # min 330 ms between peaks (  180 bpm max)
     threshold = mean + 0.6 * std
 
     candidate_idx = np.where(ecg_signal > threshold)[0]
@@ -348,7 +331,7 @@ def _extract_key_features(ecg_signal: np.ndarray) -> dict:
         heart_rate = float(np.clip(60.0 / mean_rr_seconds, 30.0, 200.0))
         mean_rr = mean_rr_seconds
     elif num_peaks == 1:
-        # Only one peak found — estimate from signal length
+        # Only one peak found - estimate from signal length
         heart_rate = float(np.clip(num_peaks / 10.0 * 60.0, 30.0, 200.0))
         mean_rr = 60.0 / heart_rate
     else:
@@ -381,7 +364,7 @@ def _extract_key_features(ecg_signal: np.ndarray) -> dict:
     }
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# -- Routes --------------------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page."""
@@ -394,7 +377,7 @@ def login():
         remember = bool(request.form.get('remember'))
 
         user = USERS.get(username)
-        # ── Fallback: check MongoDB directly if not in memory (sync for Render workers) ──
+        # -- Fallback: check MongoDB directly if not in memory (sync for Render workers) --
         if not user and _USE_MONGO:
             try:
                 doc = users_col().find_one({'username': username})
@@ -407,7 +390,7 @@ def login():
                     }
                     USERS[username] = user  # cache it
             except Exception as e:
-                print(f"⚠️  Login DB lookup failed: {e}")
+                print(f"[WARNING]   Login DB lookup failed: {e}")
 
         if user and user['password'] == password:
             session['username']     = username
@@ -433,7 +416,7 @@ def logout():
     return redirect(url_for('login'))
 
 
-# Role → display title and access level
+# Role -> display title and access level
 _ROLE_MAP = {
     'administrator':  ('Administrator',  'admin'),
     'doctor':         ('Doctor',         'admin'),
@@ -493,7 +476,7 @@ def register():
                 upsert=True,
             )
         except Exception as e:
-            print(f'⚠️  Could not persist user to MongoDB: {e}')
+            print(f'[WARNING]   Could not persist user to MongoDB: {e}')
 
     flash(
         f'Account created! Your username is <strong>{username}</strong>. '
@@ -541,10 +524,10 @@ def predict():
             return jsonify({'error': 'ECG signal must be a 1-D array'}), 400
         if len(ecg_signal) < MIN_SIGNAL_LENGTH:
             return jsonify({
-                'error': f'Signal too short — minimum {MIN_SIGNAL_LENGTH} samples required'
+                'error': f'Signal too short - minimum {MIN_SIGNAL_LENGTH} samples required'
             }), 400
 
-        # ── ML prediction ──────────────────────────────────────────────────
+        # -- ML prediction --------------------------------------------------
         if ml_model is not None and not DEMO_MODE:
             ml_result = ml_model.predict(ecg_signal)
             predicted_class = ml_result['predicted_class']
@@ -567,10 +550,10 @@ def predict():
             uncertainty = 1.0 - confidence
             feature_importance = [0.1] * 10
 
-        # ── Derived features ────────────────────────────────────────────────
+        # -- Derived features ------------------------------------------------
         key_features = _extract_key_features(ecg_signal)
 
-        # ── XAI ────────────────────────────────────────────────────────────
+        # -- XAI ------------------------------------------------------------
         gradcam = generate_gradcam_simulation(ecg_signal)
 
         feature_names = ['Heart Rate', 'HRV Metrics', 'QRS Morphology',
@@ -602,7 +585,7 @@ def predict():
             'recommendations': recommendations,
         }
 
-        # ── Persist to MongoDB ────────────────────────────────────────────
+        # -- Persist to MongoDB --------------------------------------------
         try:
             doc = save_analysis({
                 'patient_id':   'PATIENT_001',
@@ -619,7 +602,7 @@ def predict():
             })
             response['analysis_id'] = doc['_id']
         except Exception as db_err:
-            print(f'⚠️  MongoDB save error: {db_err}')
+            print(f'[WARNING]   MongoDB save error: {db_err}')
 
         return jsonify(response)
 
@@ -628,7 +611,7 @@ def predict():
         return jsonify({'error': str(exc)}), 500
 
 
-# ── WebSocket ──────────────────────────────────────────────────────────────────
+# -- WebSocket ------------------------------------------------------------------
 @socketio.on('connect')
 def handle_connect():
     print(f"Client connected: {request.sid}")
@@ -712,7 +695,7 @@ def handle_ecg_stream(data):
 
 
 
-# ── Report generation ──────────────────────────────────────────────────────────
+# -- Report generation ----------------------------------------------------------
 @app.route('/api/generate-report', methods=['POST'])
 @login_required
 @admin_required
@@ -815,7 +798,7 @@ def generate_report():
         p.setFillColorRGB(0.4, 0.4, 0.4)
         p.drawString(
             1 * inch, 1 * inch,
-            "⚠ This report is AI-generated and must be reviewed by a qualified medical professional."
+            "[WARNING] This report is AI-generated and must be reviewed by a qualified medical professional."
         )
 
         p.showPage()
@@ -830,14 +813,14 @@ def generate_report():
         return jsonify({'error': str(exc)}), 500
 
 
-# ── Database API ────────────────────────────────────────────────────────────────────
+# -- Database API --------------------------------------------------------------------
 @app.route('/api/patients', methods=['GET', 'POST'])
 @login_required
 def manage_patients():
     """List all patients or create a new one."""
     # Write operations (POST) require admin access
     if request.method == 'POST' and session.get('access_level') != 'admin':
-        return jsonify({'success': False, 'error': 'Access denied — admin role required'}), 403
+        return jsonify({'success': False, 'error': 'Access denied - admin role required'}), 403
     if _USE_MONGO:
         if request.method == 'GET':
             return jsonify({'success': True, 'patients': get_all_patients()})
@@ -858,7 +841,7 @@ def manage_patients():
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc)}), 500
 
-    # ── SQLite fallback ────────────────────────────────────────────────
+    # -- SQLite fallback ------------------------------------------------
     sess = get_session()
     try:
         if request.method == 'GET':
@@ -882,7 +865,7 @@ def manage_patient(patient_id: str):
     """Get, update, or delete a specific patient."""
     # Write operations (PUT, DELETE) require admin access
     if request.method in ('PUT', 'DELETE') and session.get('access_level') != 'admin':
-        return jsonify({'success': False, 'error': 'Access denied — admin role required'}), 403
+        return jsonify({'success': False, 'error': 'Access denied - admin role required'}), 403
     if _USE_MONGO:
         patient = get_patient(patient_id)
         if not patient:
@@ -896,7 +879,7 @@ def manage_patient(patient_id: str):
         delete_patient(patient_id)
         return jsonify({'success': True, 'message': f'Patient {patient_id} deleted'})
 
-    # ── SQLite fallback
+    # -- SQLite fallback
     sess = get_session()
     try:
         p = sess.query(Patient).filter_by(patient_id=patient_id).first()
@@ -973,11 +956,12 @@ def health():
     })
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# -- Entry point ---------------------------------------------------------------
 if __name__ == '__main__':
     print("\n" + "=" * 60)
-    print("🚀 Starting Advanced Cardiac Monitoring System")
+    print("[START] Starting Advanced Cardiac Monitoring System")
     print("=" * 60)
     print("Navigate to: http://localhost:5000")
     print("=" * 60 + "\n")
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    # Forcing extremely stable mode for Windows/Python 3.14
+    app.run(debug=False, host='0.0.0.0', port=5000, threaded=False)

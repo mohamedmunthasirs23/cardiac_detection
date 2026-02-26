@@ -188,4 +188,4 @@ if __name__ == "__main__":
     # Plot single signal
     plot_ecg_signal(sample_ecg, "Sample ECG Signal")
     
-    print("✓ Visualization utilities working correctly!")
+    print("[OK] Visualization utilities working correctly!")

@@ -182,4 +182,4 @@ if __name__ == "__main__":
     gru_model = build_gru_model(input_shape=(1000, 1), num_classes=4)
     gru_model.summary()
     
-    print("\n✓ LSTM/GRU models built successfully!")
+    print("\n[OK] LSTM/GRU models built successfully!")

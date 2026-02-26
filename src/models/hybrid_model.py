@@ -191,4 +191,4 @@ if __name__ == "__main__":
     attention_model = build_attention_hybrid_model(input_shape=(1000, 1), num_classes=4)
     attention_model.summary()
     
-    print("\n✓ Hybrid models built successfully!")
+    print("\n[OK] Hybrid models built successfully!")

@@ -40,7 +40,7 @@ class AdvancedECGEnsemble:
             min_samples_split=5,
             min_samples_leaf=2,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
             class_weight='balanced'
         )
         
@@ -57,7 +57,7 @@ class AdvancedECGEnsemble:
             max_depth=25,
             min_samples_split=5,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
             class_weight='balanced'
         )
         
@@ -260,25 +260,25 @@ class AdvancedECGEnsemble:
         """
         Train the ensemble model with cross-validation.
         """
-        print("🔬 Extracting advanced features...")
+        print("  Extracting advanced features...")
         X_features = np.array([self.extract_advanced_features(signal) for signal in X_train])
         
-        print(f"✓ Extracted {X_features.shape[1]} features from {len(X_train)} samples")
+        print(f"[OK] Extracted {X_features.shape[1]} features from {len(X_train)} samples")
         
         # Scale features
         X_scaled = self.scaler.fit_transform(X_features)
         
         # Cross-validation before training
-        print("📊 Performing cross-validation...")
+        print("[STATS] Performing cross-validation...")
         cv_scores = cross_val_score(self.ensemble, X_scaled, y_train, cv=5, scoring='accuracy')
-        print(f"✓ Cross-validation accuracy: {cv_scores.mean():.3f} (+/- {cv_scores.std():.3f})")
+        print(f"[OK] Cross-validation accuracy: {cv_scores.mean():.3f} (+/- {cv_scores.std():.3f})")
         
         # Train calibrated ensemble
-        print("🎯 Training ensemble model...")
+        print("  Training ensemble model...")
         self.calibrated_ensemble.fit(X_scaled, y_train)
         
         self.is_trained = True
-        print(f"✅ Model trained successfully!")
+        print(f"[OK] Model trained successfully!")
         print(f"   Expected accuracy: {cv_scores.mean() * 100:.1f}%")
         
         return cv_scores.mean()
@@ -341,7 +341,7 @@ class AdvancedECGEnsemble:
                 'feature_importance': feature_importance.tolist()
             }
         except Exception as e:
-            print(f"⚠️  Prediction error: {e}")
+            print(f"[WARNING]   Prediction error: {e}")
             print("   Falling back to heuristic prediction")
             return self._heuristic_prediction(ecg_signal)
     
@@ -387,7 +387,7 @@ class AdvancedECGEnsemble:
         }
         with open(filepath, 'wb') as f:
             pickle.dump(model_data, f)
-        print(f"✓ Model saved to {filepath}")
+        print(f"[OK] Model saved to {filepath}")
     
     def load(self, filepath):
         """Load model from disk."""
@@ -397,7 +397,7 @@ class AdvancedECGEnsemble:
         self.scaler = model_data['scaler']
         self.is_trained = model_data['is_trained']
         self.class_labels = model_data['class_labels']
-        print(f"✓ Advanced ensemble model loaded from {filepath}")
+        print(f"[OK] Advanced ensemble model loaded from {filepath}")
 
 
 def train_advanced_model():
@@ -406,7 +406,7 @@ def train_advanced_model():
     Achieves 95%+ accuracy through ensemble methods.
     """
     print("="*60)
-    print("🚀 TRAINING ADVANCED ENSEMBLE MODEL")
+    print("[START] TRAINING ADVANCED ENSEMBLE MODEL")
     print("="*60)
     
     # Generate synthetic training data
@@ -417,7 +417,7 @@ def train_advanced_model():
     X_train = []
     y_train = []
     
-    print("📊 Generating synthetic ECG data...")
+    print("[STATS] Generating synthetic ECG data...")
     for i in range(n_samples):
         t = np.linspace(0, 10, signal_length)
         
@@ -454,7 +454,7 @@ def train_advanced_model():
     classifier.save(model_path)
     
     print("="*60)
-    print(f"✅ TRAINING COMPLETE!")
+    print(f"[OK] TRAINING COMPLETE!")
     print(f"   Model Accuracy: {accuracy * 100:.1f}%")
     print(f"   Features: 50+ advanced features")
     print(f"   Algorithms: RF + GB + ET ensemble")
@@ -468,10 +468,10 @@ if __name__ == "__main__":
     model = train_advanced_model()
     
     # Test prediction
-    print("\n🧪 Testing prediction...")
+    print("\n  Testing prediction...")
     test_signal = np.random.randn(3600) * 0.5
     result = model.predict(test_signal)
     print(f"Prediction: {result['prediction']}")
     print(f"Confidence: {result['confidence']:.2f}")
     print(f"Uncertainty: {result['uncertainty']:.2f}")
-    print("✅ Model is working perfectly!")
+    print("[OK] Model is working perfectly!")
