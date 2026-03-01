@@ -126,6 +126,7 @@ else:
 print("=" * 60 + "\n")
 
 # -- Initialising database & models --------------------------------------------
+_mongo_init_error = None  # Stores any MongoDB init error for diagnostics
 try:
     print("[STATS] Initialising ML models...")
     load_ml_models()
@@ -135,8 +136,9 @@ try:
 
 except Exception as init_err:
     if _USE_MONGO:
-        print(f"[ERROR] MongoDB initialization failed:")
         import traceback
+        _mongo_init_error = f"{type(init_err).__name__}: {init_err}"
+        print(f"[ERROR] MongoDB initialization failed:")
         traceback.print_exc()
         print("[SYSTEM] Falling back to local SQLite database...")
         _USE_MONGO = False
@@ -979,6 +981,7 @@ def debug_mongo():
         '_USE_MONGO': _USE_MONGO,
         'MONGO_URI_set': bool(os.environ.get('MONGO_URI')),
         'eventlet_in_modules': 'eventlet' in sys.modules,
+        'mongo_init_error': _mongo_init_error,
         'steps': [],
     }
     
