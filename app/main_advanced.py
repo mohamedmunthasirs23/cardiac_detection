@@ -28,9 +28,17 @@ from functools import wraps
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Experimental Fix: Forcing SQLite as Python 3.14 + MongoDB Atlas + ML is unstable on Windows
-_USE_MONGO = False
-from app.database import init_database, get_db, get_session, Patient, ECGAnalysis
+# Auto-detect MongoDB: enable if MONGO_URI is set in the environment
+_USE_MONGO = bool(os.environ.get('MONGO_URI'))
+if _USE_MONGO:
+    from app.mongodb_database import (
+        init_database, get_database, get_all_patients, get_patient,
+        create_patient, update_patient, delete_patient,
+        get_patient_analyses, save_analysis, users_col,
+        get_stats as mongo_get_stats,
+    )
+else:
+    from app.database import init_database, get_db, get_session, Patient, ECGAnalysis
 
 # -- ML model loading (deferred to avoid conflicts on Windows) ---------------
 DEMO_MODE = True
@@ -117,31 +125,31 @@ else:
     print("\n[OK] ML mode - Ensemble / scikit-learn model active")
 print("=" * 60 + "\n")
 
-# -- Initialising database & models (DISABLED for stability testing) ----------
-# try:
-#     print("[STATS] Initialising ML models...")
-#     load_ml_models()
-# 
-#     print("[STATS] Initialising database  ")
-#     init_database()
-#     
-# except Exception as init_err:
-#     if _USE_MONGO:
-#         print(f"[ERROR] MongoDB initialization failed:")
-#         import traceback
-#         traceback.print_exc()
-#         print("[SYSTEM] Falling back to local SQLite database...")
-#         _USE_MONGO = False
-#         # Re-import SQLite implementation
-#         from app.database import (
-#             init_database as sqlite_init,
-#             get_db, get_session, Patient, ECGAnalysis
-#         )
-#         init_database = sqlite_init
-#         init_database()
-#     else:
-#         print(f"  Database initialization failed: {init_err}")
-#         raise
+# -- Initialising database & models --------------------------------------------
+try:
+    print("[STATS] Initialising ML models...")
+    load_ml_models()
+
+    print("[STATS] Initialising database...")
+    init_database()
+
+except Exception as init_err:
+    if _USE_MONGO:
+        print(f"[ERROR] MongoDB initialization failed:")
+        import traceback
+        traceback.print_exc()
+        print("[SYSTEM] Falling back to local SQLite database...")
+        _USE_MONGO = False
+        # Re-import SQLite implementation
+        from app.database import (
+            init_database as sqlite_init,
+            get_db, get_session, Patient, ECGAnalysis
+        )
+        init_database = sqlite_init
+        init_database()
+    else:
+        print(f"  Database initialization failed: {init_err}")
+        raise
 
 
 # -- Load persisted users from MongoDB ----------------------------------------
