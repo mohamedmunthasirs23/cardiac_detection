@@ -955,13 +955,81 @@ def get_stats_route():
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health-check endpoint."""
+    import sys
+    has_eventlet = 'eventlet' in sys.modules
     return jsonify({
         'status': 'healthy',
         'model_loaded': ml_model is not None and not DEMO_MODE,
         'demo_mode': DEMO_MODE,
+        'db_backend': 'MongoDB' if _USE_MONGO else 'SQLite',
+        '_USE_MONGO': _USE_MONGO,
+        'eventlet_loaded': has_eventlet,
+        'pid': os.getpid(),
         'features': ['Real-time monitoring', 'Explainable AI',
                      'Advanced analytics', 'Report generation'],
     })
+
+
+@app.route('/api/debug-mongo', methods=['GET'])
+def debug_mongo():
+    """Debug endpoint to test MongoDB connectivity step by step."""
+    import sys
+    results = {
+        'pid': os.getpid(),
+        '_USE_MONGO': _USE_MONGO,
+        'MONGO_URI_set': bool(os.environ.get('MONGO_URI')),
+        'eventlet_in_modules': 'eventlet' in sys.modules,
+        'steps': [],
+    }
+    
+    if not _USE_MONGO:
+        results['steps'].append('SKIPPED: _USE_MONGO is False, MongoDB is disabled')
+        return jsonify(results)
+    
+    try:
+        from app.mongodb_database import get_client, get_database, users_col
+        results['steps'].append('OK: imports succeeded')
+    except Exception as e:
+        results['steps'].append(f'FAIL: import error: {e}')
+        return jsonify(results)
+    
+    try:
+        client = get_client()
+        results['steps'].append(f'OK: got MongoClient')
+    except Exception as e:
+        results['steps'].append(f'FAIL: get_client error: {e}')
+        return jsonify(results)
+    
+    try:
+        db = get_database()
+        results['steps'].append(f'OK: got database "{db.name}"')
+    except Exception as e:
+        results['steps'].append(f'FAIL: get_database error: {e}')
+        return jsonify(results)
+    
+    try:
+        col = users_col()
+        results['steps'].append(f'OK: got users collection')
+    except Exception as e:
+        results['steps'].append(f'FAIL: users_col error: {e}')
+        return jsonify(results)
+    
+    try:
+        count = col.count_documents({})
+        results['steps'].append(f'OK: count_documents returned {count}')
+        results['user_count'] = count
+    except Exception as e:
+        results['steps'].append(f'FAIL: count_documents error: {e}')
+        return jsonify(results)
+    
+    try:
+        docs = list(col.find({}, {'_id': 0, 'password': 0}).limit(10))
+        results['steps'].append(f'OK: found {len(docs)} users')
+        results['users'] = [d.get('username', '?') for d in docs]
+    except Exception as e:
+        results['steps'].append(f'FAIL: find error: {e}')
+    
+    return jsonify(results)
 
 
 # -- Entry point ---------------------------------------------------------------
