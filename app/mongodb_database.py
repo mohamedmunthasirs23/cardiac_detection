@@ -37,7 +37,12 @@ def _resolve_srv_to_standard(uri: str) -> str:
     """
     Workaround for Python 3.14 + Windows access violations in SRV processing.
     Converts mongodb+srv://... to a standard multi-shard mongodb://... string.
+    Only applies on Windows - on Linux (Render), PyMongo handles SRV natively.
     """
+    import platform
+    if platform.system() != 'Windows':
+        print("[DB] Non-Windows platform detected, using native SRV resolution")
+        return uri
     if not uri.startswith('mongodb+srv://'):
         return uri
         
