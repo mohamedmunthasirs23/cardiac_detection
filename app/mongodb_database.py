@@ -28,6 +28,7 @@ MONGO_URI = os.environ.get('MONGO_URI')
 DB_NAME   = os.environ.get('MONGO_DB', 'cardiac_monitor')
 
 _client: Optional[MongoClient] = None
+_client_pid: int = 0
 _db: Optional[Database] = None
 
 import dns.resolver
@@ -92,7 +93,16 @@ def _resolve_srv_to_standard(uri: str) -> str:
         return uri
 
 def get_client() -> MongoClient:
-    global _client
+    global _client, _client_pid
+    pid = os.getpid()
+    # Re-create client if the process has forked (gunicorn workers)
+    if _client is not None and _client_pid != pid:
+        try:
+            _client.close()
+        except Exception:
+            pass
+        _client = None
+
     if _client is None:
         uri = MONGO_URI
         if uri:
@@ -113,16 +123,21 @@ def get_client() -> MongoClient:
 
         _client = MongoClient(
             uri,
-            serverSelectionTimeoutMS=10000,
-            tlsCAFile=certifi.where()
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=20000,
+            tlsCAFile=certifi.where(),
+            connect=False,  # Lazy connection: don't connect until first operation
         )
+        _client_pid = pid
     return _client
 
 
 def get_database() -> Database:
     global _db
-    if _db is None:
-        _db = get_client()[DB_NAME]
+    client = get_client()
+    # Always get from client to ensure we use the current (possibly re-created) client
+    _db = client[DB_NAME]
     return _db
 
 
