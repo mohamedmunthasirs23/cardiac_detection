@@ -27,9 +27,8 @@ from bson.errors import InvalidId
 MONGO_URI = os.environ.get('MONGO_URI')
 DB_NAME   = os.environ.get('MONGO_DB', 'cardiac_monitor')
 
-_client: Optional[MongoClient] = None
-_client_pid: int = 0
-_db: Optional[Database] = None
+# Cache the resolved URI (string only - safe to share across threads/forks)
+_resolved_uri: Optional[str] = None
 
 import dns.resolver
 import certifi
@@ -72,8 +71,6 @@ def _resolve_srv_to_standard(uri: str) -> str:
         print(f"[DB] Shard string: {shard_str[:60]}...")
         
         # 3. Construct standard URI
-        # Note: We strip 'appName' and other SRV-specific options as standard ones might differ
-        # but Atlas usually supports 'ssl=true' and 'authSource=admin'
         query_parts = []
         if '?' in params:
             base_params = params.split('?', 1)[1]
@@ -92,53 +89,51 @@ def _resolve_srv_to_standard(uri: str) -> str:
         print(f"[WARNING] SRV resolution workaround failed: {e}")
         return uri
 
-def get_client() -> MongoClient:
-    global _client, _client_pid
-    pid = os.getpid()
-    # Re-create client if the process has forked (gunicorn workers)
-    if _client is not None and _client_pid != pid:
+
+def _get_resolved_uri() -> Optional[str]:
+    """Resolve and cache the MongoDB URI (safe to share - it's just a string)."""
+    global _resolved_uri
+    if _resolved_uri is not None:
+        return _resolved_uri
+    
+    uri = MONGO_URI
+    if not uri:
+        return None
+        
+    uri = _resolve_srv_to_standard(uri)
+    
+    if uri and '://' in uri and '@' in uri and 'mongodb+srv' not in uri:
         try:
-            _client.close()
+            prefix, rest = uri.split('://', 1)
+            auth_part, host_part = rest.rsplit('@', 1)
+            if ':' in auth_part:
+                user, pwd = auth_part.split(':', 1)
+                if '%' not in pwd:
+                    pwd = urllib.parse.quote_plus(pwd)
+                uri = f"{prefix}://{user}:{pwd}@{host_part}"
         except Exception:
             pass
-        _client = None
+    
+    _resolved_uri = uri
+    return _resolved_uri
 
-    if _client is None:
-        uri = MONGO_URI
-        if uri:
-            uri = _resolve_srv_to_standard(uri)
-            
-        if uri and '://' in uri and '@' in uri and 'mongodb+srv' not in uri:
-            try:
-                # Handle special characters in password automatically
-                prefix, rest = uri.split('://', 1)
-                auth_part, host_part = rest.rsplit('@', 1)
-                if ':' in auth_part:
-                    user, pwd = auth_part.split(':', 1)
-                    if '%' not in pwd:
-                        pwd = urllib.parse.quote_plus(pwd)
-                    uri = f"{prefix}://{user}:{pwd}@{host_part}"
-            except Exception:
-                pass
 
-        _client = MongoClient(
-            uri,
-            serverSelectionTimeoutMS=20000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=20000,
-            tlsCAFile=certifi.where(),
-            connect=False,  # Lazy connection: don't connect until first operation
-        )
-        _client_pid = pid
-    return _client
+def get_client() -> MongoClient:
+    """Create a fresh MongoClient each time to avoid stale lock issues
+    with gunicorn/eventlet/threading on Render."""
+    uri = _get_resolved_uri()
+    return MongoClient(
+        uri,
+        serverSelectionTimeoutMS=20000,
+        connectTimeoutMS=20000,
+        socketTimeoutMS=20000,
+        tlsCAFile=certifi.where(),
+        connect=False,
+    )
 
 
 def get_database() -> Database:
-    global _db
-    client = get_client()
-    # Always get from client to ensure we use the current (possibly re-created) client
-    _db = client[DB_NAME]
-    return _db
+    return get_client()[DB_NAME]
 
 
 # -- Collection accessors ------------------------------------------------------
