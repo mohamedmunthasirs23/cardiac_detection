@@ -107,9 +107,11 @@ def _get_resolved_uri() -> Optional[str]:
         
     uri = _resolve_srv_to_standard(uri)
     
-    if uri and '://' in uri and '@' in uri and 'mongodb+srv' not in uri:
+    # URL-encode special characters in the password (e.g. @ # etc.)
+    if uri and '://' in uri and '@' in uri:
         try:
             prefix, rest = uri.split('://', 1)
+            # Use rsplit to handle @ in the password correctly
             auth_part, host_part = rest.rsplit('@', 1)
             if ':' in auth_part:
                 user, pwd = auth_part.split(':', 1)
