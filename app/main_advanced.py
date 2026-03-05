@@ -216,7 +216,26 @@ def _load_registered_users():
     except Exception as e:
         print(f"[WARNING]   Could not sync users from MongoDB: {e}")
 
+def _sync_users_to_mongo():
+    """Upsert all in-memory USERS into MongoDB so they persist across restarts."""
+    if not _USE_MONGO:
+        return
+    try:
+        synced = 0
+        for username, user in USERS.items():
+            users_col().update_one(
+                {'username': username},
+                {'$setOnInsert': {**user, 'username': username}},
+                upsert=True,
+            )
+            synced += 1
+        if synced:
+            print(f"[SYSTEM] Synced {synced} user(s) to MongoDB Atlas")
+    except Exception as e:
+        print(f"[WARNING]   Could not sync users to MongoDB: {e}")
+
 _load_registered_users()
+_sync_users_to_mongo()
 
 active_sessions: dict = {}
 
