@@ -160,6 +160,19 @@ def users_col() -> Collection:
     return get_database()['users']
 
 
+def vitals_col() -> Collection:
+    return get_database()['vitals']
+
+
+def iot_devices_col() -> Collection:
+    return get_database()['iot_devices']
+
+
+def alert_logs_col() -> Collection:
+    return get_database()['alert_logs']
+
+
+
 # -- ID helpers ----------------------------------------------------------------
 def _oid(val) -> Optional[ObjectId]:
     """Safely convert a string to ObjectId, returning None on failure."""
@@ -266,6 +279,13 @@ def init_database() -> None:
             print(f'[OK] Seeded {seeded} sample patient(s) into MongoDB')
         print(f'[OK] MongoDB connected - database: "{DB_NAME}"')
 
+        # -- Indexes for new collections -----------------------------------
+        vitals_col().create_index([('patient_id', ASCENDING)], name='idx_vitals_patient')
+        vitals_col().create_index([('timestamp', DESCENDING)], name='idx_vitals_ts')
+        iot_devices_col().create_index([('device_id', ASCENDING)], unique=True, name='idx_iot_device_id')
+        alert_logs_col().create_index([('patient_id', ASCENDING)], name='idx_alert_patient')
+        alert_logs_col().create_index([('timestamp', DESCENDING)], name='idx_alert_ts')
+
     except Exception as exc:
         print(f'[ERROR] MongoDB init error: {exc}')
         raise
@@ -335,3 +355,91 @@ def get_stats() -> dict:
         'total_analyses':  total_analyses,
         'risk_breakdown':  risk_breakdown,
     }
+
+
+# -- Vitals CRUD ---------------------------------------------------------------
+def save_vitals(data: dict) -> dict:
+    """Insert a vitals reading; returns serialised doc."""
+    data['timestamp'] = datetime.now()
+    result = vitals_col().insert_one(data)
+    doc = vitals_col().find_one({'_id': result.inserted_id})
+    doc = dict(doc)
+    doc['_id'] = str(doc['_id'])
+    if isinstance(doc.get('timestamp'), datetime):
+        doc['timestamp'] = doc['timestamp'].isoformat()
+    return doc
+
+
+def get_patient_vitals(patient_id: str, limit: int = 50) -> list[dict]:
+    docs = list(
+        vitals_col()
+        .find({'patient_id': patient_id})
+        .sort('timestamp', DESCENDING)
+        .limit(limit)
+    )
+    result = []
+    for d in docs:
+        d = dict(d)
+        d['_id'] = str(d['_id'])
+        if isinstance(d.get('timestamp'), datetime):
+            d['timestamp'] = d['timestamp'].isoformat()
+        result.append(d)
+    return result
+
+
+# -- IoT Device CRUD -----------------------------------------------------------
+def save_iot_device(data: dict) -> dict:
+    """Upsert an IoT device record; returns serialised doc."""
+    data['updated_at'] = datetime.now()
+    iot_devices_col().update_one(
+        {'device_id': data['device_id']},
+        {'$set': data, '$setOnInsert': {'registered_at': datetime.now()}},
+        upsert=True,
+    )
+    doc = dict(iot_devices_col().find_one({'device_id': data['device_id']}))
+    doc['_id'] = str(doc['_id'])
+    return doc
+
+
+def get_all_iot_devices() -> list[dict]:
+    docs = list(iot_devices_col().find({}))
+    result = []
+    for d in docs:
+        d = dict(d)
+        d['_id'] = str(d['_id'])
+        result.append(d)
+    return result
+
+
+def delete_iot_device(device_id: str) -> bool:
+    r = iot_devices_col().delete_one({'device_id': device_id})
+    return r.deleted_count > 0
+
+
+# -- Alert Logs CRUD -----------------------------------------------------------
+def save_alert_log(data: dict) -> dict:
+    """Insert an alert log entry."""
+    data['timestamp'] = datetime.now()
+    result = alert_logs_col().insert_one(data)
+    doc = dict(alert_logs_col().find_one({'_id': result.inserted_id}))
+    doc['_id'] = str(doc['_id'])
+    if isinstance(doc.get('timestamp'), datetime):
+        doc['timestamp'] = doc['timestamp'].isoformat()
+    return doc
+
+
+def get_recent_alert_logs(limit: int = 100) -> list[dict]:
+    docs = list(
+        alert_logs_col()
+        .find({})
+        .sort('timestamp', DESCENDING)
+        .limit(limit)
+    )
+    result = []
+    for d in docs:
+        d = dict(d)
+        d['_id'] = str(d['_id'])
+        if isinstance(d.get('timestamp'), datetime):
+            d['timestamp'] = d['timestamp'].isoformat()
+        result.append(d)
+    return result

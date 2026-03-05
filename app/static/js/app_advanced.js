@@ -234,15 +234,38 @@ const analyzeECG = debounce(async () => {
 function displayResults(result) {
     lastPredictionResult = result;
 
-    const isNormal = result.prediction.toLowerCase().includes('normal');
+    const prediction = result.prediction || '';
+    const isNormal = prediction.toLowerCase().includes('normal');
+    const isCritical = prediction.toLowerCase().includes('mi') ||
+        prediction.toLowerCase().includes('infarct') ||
+        prediction.toLowerCase().includes('ischemia') ||
+        prediction.toLowerCase().includes('block') ||
+        prediction.toLowerCase().includes('vf') ||
+        prediction.toLowerCase().includes('vt ');
+    const isSerious = !isNormal && (result.risk_level === 'High' || isCritical);
+
     $('predictionIcon').className = `prediction-icon ${isNormal ? 'normal' : 'abnormal'}`;
     $('predictionIcon').textContent = isNormal ? '✓' : '⚠';
-    $('predictionLabel').textContent = result.prediction;
+
+    const labelEl = $('predictionLabel');
+    labelEl.textContent = prediction;
+    labelEl.style.color = isNormal ? '#26de81' : (isSerious ? '#ff4757' : '#ffa500');
+    if (isSerious) {
+        labelEl.style.textShadow = '0 0 16px rgba(255,71,87,.35)';
+    } else {
+        labelEl.style.textShadow = '';
+    }
+
     $('predictionConfidence').textContent = `Confidence: ${(result.confidence * 100).toFixed(1)}%`;
 
     const badge = $('riskBadge');
     badge.textContent = result.risk_level;
     badge.className = `risk-badge ${result.risk_level.toLowerCase()}`;
+    if (isSerious) {
+        badge.style.animation = 'pulse 1.2s ease-in-out infinite';
+    } else {
+        badge.style.animation = '';
+    }
 
     // Enhanced colour-coded probability bars
     const probClasses = {
@@ -257,13 +280,19 @@ function displayResults(result) {
     for (const [cls, prob] of entries) {
         const key = Object.keys(probClasses).find(k => cls.toLowerCase().includes(k.split(' ')[0].toLowerCase())) || 'other';
         const colorClass = probClasses[key] || 'other';
+        const isCls = cls.toLowerCase().includes('mi') || cls.toLowerCase().includes('infarct') || cls.toLowerCase().includes('ischemia');
+        const isHighProb = prob >= 0.4;
         const row = document.createElement('div');
         row.className = 'prob-row';
         row.setAttribute('role', 'listitem');
+        // Show red warning badge for serious conditions with high probability
+        const warnBadge = (isCls && isHighProb)
+            ? `<span style="margin-left:.4rem;font-size:.6rem;background:#ff475722;color:#ff4757;border:1px solid #ff475766;border-radius:99px;padding:.1rem .45rem;font-weight:800;">⚠ CRITICAL</span>`
+            : '';
         row.innerHTML = `
-            <span class="prob-label" title="${cls}">${cls}</span>
+            <span class="prob-label" title="${cls}" style="${(isCls && isHighProb) ? 'color:#ff4757;font-weight:700;' : ''}">${cls}${warnBadge}</span>
             <div class="prob-track"><div class="prob-fill prob-fill--${colorClass}" style="width:0%"></div></div>
-            <span class="prob-pct">${(prob * 100).toFixed(1)}%</span>`;
+            <span class="prob-pct" style="${(isCls && isHighProb) ? 'color:#ff4757;' : ''}"> ${(prob * 100).toFixed(1)}%</span>`;
         container.appendChild(row);
         setTimeout(() => { row.querySelector('.prob-fill').style.width = `${prob * 100}%`; }, 80);
     }
@@ -286,6 +315,19 @@ function displayResults(result) {
         d.setAttribute('role', 'listitem');
         d.innerHTML = `<div class="feature-label">${name}</div><div class="feature-value">${typeof val === 'number' ? val.toFixed(2) : val}</div>`;
         fc.appendChild(d);
+    }
+
+    // Serious condition banner
+    const existingBanner = $('severityBanner');
+    if (existingBanner) existingBanner.remove();
+    if (isSerious) {
+        const banner = document.createElement('div');
+        banner.id = 'severityBanner';
+        banner.style.cssText = 'background:rgba(255,71,87,.12);border:1.5px solid rgba(255,71,87,.5);border-radius:12px;padding:.7rem 1rem;margin-top:.75rem;display:flex;align-items:center;gap:.6rem;animation:fadeIn .4s;';
+        banner.innerHTML = `<span style="font-size:1.1rem;">🚨</span><div><div style="font-size:.8rem;font-weight:800;color:#ff4757;margin-bottom:.15rem;">CRITICAL FINDING DETECTED</div><div style="font-size:.74rem;color:#b8c4e0;">${prediction} — immediate cardiology review recommended. Do not dismiss these findings.</div></div>`;
+        // Insert after prediction-main div
+        const predMain = document.querySelector('.prediction-main');
+        if (predMain && predMain.parentNode) predMain.parentNode.insertBefore(banner, predMain.nextSibling);
     }
 }
 
@@ -437,11 +479,19 @@ function displayXAI(result) {
         }
     }
 
-    // Recommendations
+    // Recommendations — mark urgent items red
     if (result.recommendations) {
         const list = $('recommendationsList');
+        const urgentKeywords = ['immediate', 'emergency', 'urgent', 'critical', 'call', '911', 'cardiology', 'hospital', 'seek'];
         list.innerHTML = result.recommendations
-            .map(r => `<li>${r}</li>`)
+            .map(r => {
+                const isUrgent = urgentKeywords.some(kw => r.toLowerCase().includes(kw));
+                const style = isUrgent
+                    ? 'color:#ff4757;font-weight:700;background:rgba(255,71,87,.08);border-left:3px solid #ff4757;padding:.25rem .5rem;border-radius:0 6px 6px 0;margin-bottom:.3rem;'
+                    : '';
+                const prefix = isUrgent ? '🚨 ' : '';
+                return `<li style="${style}">${prefix}${r}</li>`;
+            })
             .join('');
     }
 }
@@ -503,12 +553,13 @@ async function generatePDFReport() {
     if (isViewer) { showNotification('🔒 View-only access — report generation is disabled.', 'error'); return; }
     if (!lastPredictionResult) { showNotification('⚠️ Analyze an ECG first before generating a report', 'warning'); return; }
     showNotification('📄 Generating PDF report…', 'info');
+    const patientId = $('selectedPatient')?.value || 'PATIENT_001';
     try {
         const res = await fetch('/api/generate-report', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                patient_id: 'PATIENT_001',
+                patient_id: patientId,
                 prediction: lastPredictionResult.prediction,
                 confidence: lastPredictionResult.confidence,
                 uncertainty: lastPredictionResult.uncertainty,
@@ -521,12 +572,14 @@ async function generatePDFReport() {
         if (res.ok) {
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
-            const a = Object.assign(document.createElement('a'), { href: url, download: `cardiac_report_${Date.now()}.pdf` });
+            const a = Object.assign(document.createElement('a'), { href: url, download: `cardiac_report_${patientId}_${Date.now()}.pdf` });
+            document.body.appendChild(a);
             a.click();
+            document.body.removeChild(a);
             URL.revokeObjectURL(url);
             showNotification('✅ Report downloaded!', 'success');
         } else {
-            const err = await res.json();
+            const err = await res.json().catch(() => ({}));
             showNotification(`❌ ${err.error || 'Failed to generate report'}`, 'error');
         }
     } catch (err) {

@@ -17,6 +17,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
 
 load_dotenv()
 
@@ -27,6 +30,14 @@ import numpy as np
 from functools import wraps
 
 sys.path.append(str(Path(__file__).parent.parent))
+
+# -- New Real-World Integration modules ---------------------------------------
+from src.vitals.vital_fusion import VitalFusionEngine, VitalReading
+from src.iot.iot_connector import IoTDeviceManager, DevicePacket, DeviceSimulator, device_manager
+from src.alerts.alert_engine import AlertEngine, alert_engine
+
+_vital_fusion = VitalFusionEngine()
+_simulators: dict = {}   # patient_id -> DeviceSimulator (for demo streaming)
 
 # Auto-detect MongoDB: enable if MONGO_URI is set in the environment
 _USE_MONGO = bool(os.environ.get('MONGO_URI'))
@@ -577,6 +588,39 @@ def predict():
         risk_level = _compute_risk_level(predicted_class, confidence)
         recommendations = generate_recommendations(predicted_class, key_features)
 
+        # -- Vital Fusion (optional) ----------------------------------------
+        vitals_data = data.get('vitals', {})
+        fusion_result = None
+        if vitals_data:
+            try:
+                vital_reading = VitalReading(
+                    spo2=vitals_data.get('spo2'),
+                    systolic=vitals_data.get('systolic'),
+                    diastolic=vitals_data.get('diastolic'),
+                    temperature=vitals_data.get('temperature'),
+                    heart_rate=key_features.get('Heart Rate'),
+                )
+                fusion_result = _vital_fusion.evaluate(
+                    ecg_prediction=CLASS_LABELS.get(predicted_class, 'Unknown'),
+                    ecg_confidence=float(confidence),
+                    ecg_risk_level=risk_level,
+                    vitals=vital_reading,
+                )
+                # Save vitals to MongoDB
+                if _USE_MONGO:
+                    try:
+                        from app.mongodb_database import save_vitals
+                        save_vitals({
+                            'patient_id': data.get('patient_id', 'PATIENT_001'),
+                            **vital_reading.to_dict(),
+                            'ucrs': fusion_result.ucrs,
+                            'fused_risk_level': fusion_result.fused_risk_level,
+                        })
+                    except Exception:
+                        pass
+            except Exception as vf_err:
+                print(f'[WARNING] Vital fusion error: {vf_err}')
+
         response = {
             'success': True,
             'prediction': CLASS_LABELS.get(predicted_class, 'Unknown'),
@@ -593,6 +637,7 @@ def predict():
             'timestamp': datetime.now().isoformat(),
             'risk_level': risk_level,
             'recommendations': recommendations,
+            'fusion': fusion_result.to_dict() if fusion_result else None,
         }
 
         # -- Persist to MongoDB --------------------------------------------
@@ -613,6 +658,28 @@ def predict():
             response['analysis_id'] = doc['_id']
         except Exception as db_err:
             print(f'[WARNING]   MongoDB save error: {db_err}')
+
+        # -- Fire alerts if thresholds breached ----------------------------
+        try:
+            alert_vitals = vitals_data if vitals_data else None
+            alert_event = alert_engine.evaluate(
+                patient_id   = data.get('patient_id', 'PATIENT_001'),
+                ecg_prediction = response['prediction'],
+                ecg_confidence = float(confidence),
+                risk_level   = risk_level,
+                ucrs         = fusion_result.ucrs if fusion_result else None,
+                vitals       = alert_vitals,
+            )
+            if alert_event:
+                response['alert_fired'] = alert_event.to_dict()
+                if _USE_MONGO:
+                    try:
+                        from app.mongodb_database import save_alert_log
+                        save_alert_log(alert_event.to_dict())
+                    except Exception:
+                        pass
+        except Exception as ae:
+            print(f'[WARNING] Alert engine error: {ae}')
 
         return jsonify(response)
 
@@ -708,7 +775,6 @@ def handle_ecg_stream(data):
 # -- Report generation ----------------------------------------------------------
 @app.route('/api/generate-report', methods=['POST'])
 @login_required
-@admin_required
 def generate_report():
     """Generate a comprehensive PDF cardiac analysis report."""
     try:
@@ -972,6 +1038,81 @@ def health():
     })
 
 
+# -- AI Chat -------------------------------------------------------------------
+@app.route('/api/chat', methods=['POST'])
+@login_required
+def ai_chat():
+    """
+    Real AI chat endpoint powered by Google Gemini.
+    Falls back gracefully to the static knowledge base if the API key is
+    not configured or the call fails.
+    """
+    CARDIAC_SYSTEM_PROMPT = """You are CardiacAI, an expert medical AI assistant specialised in:
+- Electrocardiography (ECG/EKG) analysis and interpretation
+- Cardiac arrhythmias, myocardial infarction, heart failure, and other conditions
+- Cardiometric features: Heart Rate, HRV (SDNN, RMSSD, pNN50), QRS duration, QT interval
+- Explainable AI methods: SHAP, Grad-CAM in cardiac diagnosis
+- Clinical guidelines and when to seek emergency care
+- This CardiacMonitor Pro dashboard: ECG upload, real-time monitoring, PDF report generation, patient history
+
+Rules:
+- Always be concise, accurate, and compassionate.
+- ALWAYS recommend consulting a qualified cardiologist for personal medical decisions.
+- Never give a definitive personal medical diagnosis.
+- Use markdown-like formatting (bold with <b> tags) in your answer.
+- Keep answers under 120 words unless the question requires more depth.
+- If the question is completely unrelated to cardiology or this dashboard, politely redirect."""
+
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get('message') or '').strip()
+    if not user_message:
+        return jsonify({'error': 'No message provided'}), 400
+
+    # Try Google Gemini
+    api_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+    if api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(
+                model_name='gemini-2.5-flash',
+                system_instruction=CARDIAC_SYSTEM_PROMPT,
+            )
+            response = model.generate_content(user_message)
+            return jsonify({'reply': response.text, 'source': 'gemini'})
+        except ImportError:
+            pass  # google-generativeai not installed → use fallback
+        except Exception as exc:
+            print(f'[AI Chat] Gemini error: {exc}')
+            # fall through to static KB
+
+    # Static knowledge-base fallback
+    q = user_message.lower()
+    KB = [
+        (['arrhythmia', 'irregular', 'rhythm', 'afib', 'atrial'], '<b>Arrhythmia</b> is an irregular heart rhythm detected via R-peak interval analysis. Symptoms include palpitations, dizziness, or dyspnoea. Always consult a cardiologist — some arrhythmias require urgent treatment.'),
+        (['myocardial infarction', 'heart attack', 'mi', 'st elevation', 'infarct'], '<b>Myocardial Infarction (MI)</b> is caused by blocked coronary arteries. Detected via ST-segment elevation in ECG. 🚨 If suspected, call emergency services immediately — time is critical.'),
+        (['bradycardia', 'slow heart', 'low bpm'], '<b>Bradycardia</b> is a resting heart rate below 60 bpm. It may be normal in athletes but can cause fainting if severe. An ECG analysis and Holter monitoring help confirm it.'),
+        (['tachycardia', 'fast heart', 'high bpm', 'fast rate'], '<b>Tachycardia</b> is a resting heart rate above 100 bpm. Causes range from stress and dehydration to serious arrhythmias. ECG analysis helps distinguish the type.'),
+        (['spo2', 'oxygen', 'blood oxygen'], 'Normal <b>SpO₂</b> is 95–100%. Below 90% is critical hypoxaemia requiring immediate attention. The Vital Signs Monitor on this dashboard lets you log SpO₂ alongside your ECG analysis.'),
+        (['blood pressure', 'systolic', 'diastolic', 'hypertension', 'bp'], 'Normal BP is <120/80 mmHg. Above 180/120 is a <b>hypertensive crisis</b> — seek emergency care. This dashboard tracks BP as part of the Unified Cardiac Risk Score (UCRS).'),
+        (['hrv', 'heart rate variability', 'sdnn', 'rmssd'], '<b>HRV (Heart Rate Variability)</b> measures the variation between beats. <b>SDNN</b> reflects overall autonomic function; <b>RMSSD</b> reflects parasympathetic activity. Reduced HRV is linked to higher cardiac risk.'),
+        (['ucrs', 'unified', 'fusion', 'vital fusion'], 'The <b>Unified Cardiac Risk Score (UCRS)</b> is unique to this platform — it fuses ECG predictions with SpO₂, BP, temperature, and heart rate using weighted clinical thresholds into a single 0–100 risk score.'),
+        (['iot', 'device', 'wearable', 'simulate', 'sensor'], 'The <b>IoT Device Hub</b> allows real wearable devices to stream ECG and vital data to this dashboard in real-time via the WebSocket API. Use "Simulate Device" to see a live demo.'),
+        (['alert', 'emergency', 'notification', 'sms', 'email'], 'The <b>Emergency Alert System</b> monitors UCRS and vital thresholds. When exceeded, it automatically sends email/SMS/WhatsApp alerts to configured emergency contacts.'),
+        (['pdf', 'report', 'download'], 'After running an ECG analysis, click <b>"PDF Report"</b> to download a clinically formatted PDF including diagnosis, confidence, probabilities, features, and recommendations.'),
+        (['shap', 'explain', 'feature importance', 'xai'], '<b>SHAP values</b> show which ECG features most influenced the AI prediction — making the model transparent and clinically interpretable rather than a "black box".'),
+        (['gradcam', 'heatmap', 'grad-cam'], '<b>Grad-CAM</b> highlights which regions of the ECG signal the model focused on when predicting. Brighter = higher influence on the prediction.'),
+        (['normal', 'healthy', 'no disease'], 'A <b>Normal Sinus Rhythm</b> result means no detectable cardiac abnormalities at analysis time. Continue routine monitoring every 6–12 months for preventive care.'),
+        (['hello', 'hi', 'help', 'what can you do', 'hey'], 'Hello! 👋 I\'m <b>CardiacAI</b>, your real-time cardiac assistant. Ask me about:<br>• ECG conditions (arrhythmia, MI, HRV)<br>• Vital signs interpretation<br>• UCRS, IoT sync, alerts<br>• SHAP/Grad-CAM explanations<br>• How to use this dashboard'),
+    ]
+    for keys, answer in KB:
+        if any(k in q for k in keys):
+            return jsonify({'reply': answer, 'source': 'kb'})
+
+    fallback = "🤔 I'm not certain about that query. I'm specialised in cardiac topics — try asking about <b>arrhythmia</b>, <b>blood pressure</b>, <b>UCRS</b>, <b>HRV</b>, or <b>ECG interpretation</b>. For personal medical advice, always consult your cardiologist."
+    return jsonify({'reply': fallback, 'source': 'kb'})
+
+
 @app.route('/api/debug-mongo', methods=['GET'])
 def debug_mongo():
     """Debug endpoint to test MongoDB connectivity step by step."""
@@ -1033,6 +1174,366 @@ def debug_mongo():
         results['steps'].append(f'FAIL: find error: {e}')
     
     return jsonify(results)
+
+
+# =============================================================================
+# REAL-WORLD INTEGRATION — NEW ENDPOINTS
+# =============================================================================
+
+# -- Multi-Vital Fusion -------------------------------------------------------
+
+@app.route('/api/vitals/submit', methods=['POST'])
+@login_required
+def submit_vitals():
+    """Submit a standalone vitals reading for a patient and compute UCRS."""
+    try:
+        data = request.get_json(silent=True) or {}
+        patient_id = data.get('patient_id', 'PATIENT_001')
+
+        vital_reading = VitalReading(
+            spo2=data.get('spo2'),
+            systolic=data.get('systolic'),
+            diastolic=data.get('diastolic'),
+            temperature=data.get('temperature'),
+            heart_rate=data.get('heart_rate'),
+        )
+
+        # Evaluate fusion with no ECG (Normal baseline)
+        fusion = _vital_fusion.evaluate(
+            ecg_prediction='Normal',
+            ecg_confidence=1.0,
+            ecg_risk_level='Low',
+            vitals=vital_reading,
+        )
+
+        result = {
+            'success': True,
+            'patient_id': patient_id,
+            'vitals': vital_reading.to_dict(),
+            'fusion': fusion.to_dict(),
+        }
+
+        # Persist to MongoDB
+        if _USE_MONGO:
+            try:
+                from app.mongodb_database import save_vitals
+                save_vitals({'patient_id': patient_id, **vital_reading.to_dict(),
+                             'ucrs': fusion.ucrs, 'fused_risk_level': fusion.fused_risk_level})
+            except Exception:
+                pass
+
+        # Evaluate alerts
+        alert_event = alert_engine.evaluate(
+            patient_id=patient_id,
+            ecg_prediction='Normal',
+            ecg_confidence=1.0,
+            risk_level=fusion.fused_risk_level,
+            ucrs=fusion.ucrs,
+            vitals=data,
+        )
+        if alert_event:
+            result['alert_fired'] = alert_event.to_dict()
+
+        # Broadcast via WebSocket so dashboard updates live
+        socketio.emit('vitals_update', result, broadcast=True)
+
+        return jsonify(result)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/vitals/<patient_id>', methods=['GET'])
+@login_required
+def get_vitals(patient_id: str):
+    """Return last 50 vitals readings for a patient."""
+    try:
+        if _USE_MONGO:
+            from app.mongodb_database import get_patient_vitals
+            readings = get_patient_vitals(patient_id)
+        else:
+            readings = []
+        return jsonify({'success': True, 'patient_id': patient_id, 'vitals': readings})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+# -- IoT Device Hub -----------------------------------------------------------
+
+@app.route('/api/iot/devices', methods=['GET'])
+@login_required
+def list_iot_devices():
+    """List all registered IoT devices."""
+    try:
+        devices = device_manager.list_devices()
+        return jsonify({'success': True, 'devices': devices})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/iot/register', methods=['POST'])
+@login_required
+@admin_required
+def register_iot_device():
+    """Register a new IoT device."""
+    try:
+        data = request.get_json(silent=True) or {}
+        device_id   = data.get('device_id', '').strip()
+        device_type = data.get('device_type', 'custom')
+        patient_id  = data.get('patient_id', 'PATIENT_001')
+        label       = data.get('label', '')
+        if not device_id:
+            return jsonify({'success': False, 'error': 'device_id is required'}), 400
+        dev = device_manager.register(device_id, device_type, patient_id, label)
+        if _USE_MONGO:
+            try:
+                from app.mongodb_database import save_iot_device
+                save_iot_device(dev.to_dict())
+            except Exception:
+                pass
+        socketio.emit('device_registered', dev.to_dict(), broadcast=True)
+        return jsonify({'success': True, 'device': dev.to_dict()}), 201
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/iot/devices/<device_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def deregister_iot_device(device_id: str):
+    """Deregister (remove) an IoT device."""
+    try:
+        ok = device_manager.deregister(device_id)
+        if _USE_MONGO:
+            try:
+                from app.mongodb_database import delete_iot_device
+                delete_iot_device(device_id)
+            except Exception:
+                pass
+        socketio.emit('device_removed', {'device_id': device_id}, broadcast=True)
+        return jsonify({'success': ok})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/iot/stream', methods=['POST'])
+@login_required
+def iot_stream():
+    """
+    IoT device data ingestion endpoint.
+    Accepts a data packet from any registered device, runs lightweight
+    analysis, and broadcasts the result to all dashboard WebSocket clients.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        packet = DevicePacket.from_dict(data)
+
+        # Update device state
+        dev = device_manager.handle_packet(packet)
+        if dev is None:
+            # Auto-register unknown devices
+            dev = device_manager.register(packet.device_id, 'custom', packet.patient_id)
+
+        # Quick ECG heuristic on incoming chunk
+        ecg = np.asarray(packet.ecg_chunk, dtype=np.float64) if packet.ecg_chunk else np.array([])
+        if len(ecg) >= MIN_SIGNAL_LENGTH:
+            key_feats  = _extract_key_features(ecg)
+            std = float(np.std(ecg))
+            mean_ = float(np.mean(ecg))
+            if std > 0.5 and abs(mean_) < 0.3:
+                ecg_pred, ecg_conf = 'Normal', 0.85
+            else:
+                ecg_pred, ecg_conf = 'Arrhythmia', 0.68
+        else:
+            ecg_pred, ecg_conf = 'Unknown', 0.5
+            key_feats = {}
+
+        # Vital fusion
+        vital_reading = VitalReading(
+            spo2=packet.spo2,
+            systolic=packet.systolic,
+            diastolic=packet.diastolic,
+            temperature=packet.temperature,
+            heart_rate=packet.heart_rate or key_feats.get('Heart Rate'),
+        )
+        fusion = _vital_fusion.evaluate(
+            ecg_prediction=ecg_pred,
+            ecg_confidence=ecg_conf,
+            ecg_risk_level='Low' if ecg_pred == 'Normal' else 'Medium',
+            vitals=vital_reading,
+        )
+
+        broadcast_payload = {
+            'device_id':   packet.device_id,
+            'patient_id':  packet.patient_id,
+            'ecg_prediction': ecg_pred,
+            'ecg_confidence': ecg_conf,
+            'heart_rate':  packet.heart_rate or key_feats.get('Heart Rate', 70),
+            'spo2':        packet.spo2,
+            'systolic':    packet.systolic,
+            'diastolic':   packet.diastolic,
+            'temperature': packet.temperature,
+            'fusion':      fusion.to_dict(),
+            'ecg_chunk':   packet.ecg_chunk[:100] if packet.ecg_chunk else [],
+            'timestamp':   packet.timestamp,
+            'packet_count': dev.packet_count,
+        }
+
+        socketio.emit('iot_data_update', broadcast_payload, broadcast=True)
+
+        # Alert check
+        alert_engine.evaluate(
+            patient_id=packet.patient_id,
+            ecg_prediction=ecg_pred,
+            ecg_confidence=ecg_conf,
+            risk_level=fusion.fused_risk_level,
+            ucrs=fusion.ucrs,
+            vitals={'spo2': packet.spo2, 'systolic': packet.systolic,
+                    'heart_rate': packet.heart_rate},
+        )
+
+        return jsonify({'success': True, 'fusion': fusion.to_dict()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/iot/simulate', methods=['POST'])
+@login_required
+def iot_simulate():
+    """
+    Start/stop a built-in device simulator that POSTs packets
+    to /api/iot/stream every second for demo purposes.
+    Runs in a daemon thread — stops when 'stop' action is sent.
+    """
+    import threading, time
+    data = request.get_json(silent=True) or {}
+    action     = data.get('action', 'start')
+    patient_id = data.get('patient_id', 'PATIENT_001')
+    device_id  = f'SIM-{patient_id}'
+
+    if action == 'stop':
+        _simulators.pop(patient_id, None)
+        device_manager.mark_offline(device_id)
+        socketio.emit('simulator_stopped', {'device_id': device_id}, broadcast=True)
+        return jsonify({'success': True, 'message': 'Simulator stopped'})
+
+    if patient_id in _simulators:
+        return jsonify({'success': True, 'message': 'Simulator already running', 'device_id': device_id})
+
+    sim = DeviceSimulator(device_id=device_id, patient_id=patient_id)
+    _simulators[patient_id] = sim
+    device_manager.register(device_id, 'mobile_app', patient_id, f'Simulator ({patient_id})')
+    socketio.emit('simulator_started', {'device_id': device_id, 'patient_id': patient_id}, broadcast=True)
+
+    def _run():
+        while patient_id in _simulators:
+            try:
+                packet = sim.next_packet(samples=250)
+                # POST internally via SocketIO broadcast instead of HTTP to avoid re-login
+                ecg = np.asarray(packet.ecg_chunk, dtype=np.float64)
+                if len(ecg) >= MIN_SIGNAL_LENGTH:
+                    std_ = float(np.std(ecg))
+                    mean_ = float(np.mean(ecg))
+                    ecg_pred = 'Normal' if (std_ > 0.5 and abs(mean_) < 0.3) else 'Arrhythmia'
+                    ecg_conf = 0.85 if ecg_pred == 'Normal' else 0.68
+                else:
+                    ecg_pred, ecg_conf = 'Unknown', 0.5
+                vital_r = VitalReading(spo2=packet.spo2, systolic=packet.systolic,
+                                       diastolic=packet.diastolic, temperature=packet.temperature,
+                                       heart_rate=packet.heart_rate)
+                fusion = _vital_fusion.evaluate(ecg_pred, ecg_conf,
+                                                'Low' if ecg_pred == 'Normal' else 'Medium', vital_r)
+                dev_ref = device_manager.handle_packet(packet)
+                payload = {
+                    'device_id': device_id, 'patient_id': patient_id,
+                    'ecg_prediction': ecg_pred, 'ecg_confidence': ecg_conf,
+                    'heart_rate': packet.heart_rate, 'spo2': packet.spo2,
+                    'systolic': packet.systolic, 'diastolic': packet.diastolic,
+                    'temperature': packet.temperature, 'fusion': fusion.to_dict(),
+                    'ecg_chunk': packet.ecg_chunk[:100], 'timestamp': packet.timestamp,
+                    'packet_count': dev_ref.packet_count if dev_ref else 0,
+                }
+                socketio.emit('iot_data_update', payload, broadcast=True)
+                alert_engine.evaluate(patient_id=patient_id, ecg_prediction=ecg_pred,
+                                      ecg_confidence=ecg_conf, risk_level=fusion.fused_risk_level,
+                                      ucrs=fusion.ucrs,
+                                      vitals={'spo2': packet.spo2, 'systolic': packet.systolic,
+                                              'heart_rate': packet.heart_rate})
+            except Exception as e:
+                print(f'[SIM] Error: {e}')
+            time.sleep(1)
+        device_manager.mark_offline(device_id)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({'success': True, 'device_id': device_id, 'patient_id': patient_id})
+
+
+# -- Emergency Alert System ---------------------------------------------------
+
+@app.route('/api/alerts/config', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def alerts_config():
+    """Get or update alert thresholds, contacts, and channel toggles."""
+    if request.method == 'GET':
+        return jsonify({'success': True, 'config': alert_engine.get_config()})
+    data = request.get_json(silent=True) or {}
+    alert_engine.update_config(
+        thresholds=data.get('thresholds'),
+        contacts=data.get('contacts'),
+        channels=data.get('channels'),
+    )
+    return jsonify({'success': True, 'config': alert_engine.get_config()})
+
+
+@app.route('/api/alerts/logs', methods=['GET'])
+@login_required
+def alerts_logs():
+    """Return recent alert history (in-memory + MongoDB)."""
+    try:
+        limit = int(request.args.get('limit', 50))
+        # Merge: in-memory first, then MongoDB for persistence
+        mem_logs = alert_engine.get_recent_alerts(limit)
+        if _USE_MONGO and len(mem_logs) < limit:
+            try:
+                from app.mongodb_database import get_recent_alert_logs
+                db_logs = get_recent_alert_logs(limit)
+                # De-duplicate by alert_id
+                seen = {l.get('alert_id') for l in mem_logs}
+                for log in db_logs:
+                    if log.get('alert_id') not in seen:
+                        mem_logs.append(log)
+                        seen.add(log.get('alert_id'))
+            except Exception:
+                pass
+        mem_logs = mem_logs[:limit]
+        return jsonify({'success': True, 'alerts': mem_logs, 'total': len(mem_logs)})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/alerts/test', methods=['POST'])
+@login_required
+@admin_required
+def alerts_test():
+    """Fire a test alert to verify channel configuration."""
+    import uuid
+    from src.alerts.alert_engine import AlertEvent
+    test_event = AlertEvent(
+        alert_id='TEST-' + str(uuid.uuid4())[:6].upper(),
+        patient_id='TEST-PATIENT',
+        severity='Warning',
+        trigger='Manual test alert fired by admin',
+        message='🧪 TEST ALERT\nThis is a test alert from CardiacMonitor Pro.\nIf you received this, your alert channels are working correctly.',
+        channels_fired=[],
+        channels_failed=[],
+    )
+    import threading
+    t = threading.Thread(target=alert_engine._dispatch, args=(test_event,), daemon=True)
+    t.start()
+    return jsonify({'success': True, 'test_event': test_event.to_dict()})
 
 
 # -- Entry point ---------------------------------------------------------------

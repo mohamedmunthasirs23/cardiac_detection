@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
 
 # --- Safe Mode Dashboard for Unstable Windows Environments ---
-app = Flask(__name__, template_folder='templates', static_folder='static')
+app = Flask(__name__, template_folder='app/templates', static_folder='app/static')
 app.secret_key = 'emergency_safe_key_123'
 
 USERS = {
