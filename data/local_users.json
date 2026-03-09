@@ -40,5 +40,17 @@
         "role": "Researcher",
         "name": "qq qq",
         "access_level": "viewer"
+    },
+    "none": {
+        "password": "none123",
+        "role": "Cardiologist",
+        "name": "Dr. one",
+        "access_level": "admin"
+    },
+    "mohamed": {
+        "password": "noone123",
+        "role": "Doctor",
+        "name": "Dr. munthasir",
+        "access_level": "admin"
     }
 }
