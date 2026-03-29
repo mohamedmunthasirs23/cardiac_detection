@@ -126,8 +126,8 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-print("\n" + "=" * 60)
-print("ADVANCED CARDIAC ABNORMALITY DETECTION SYSTEM")
+print("=" * 60)
+print("INTELLIGENT CARDIAC ABNORMALITY IDENTIFICATION SYSTEM")
 print("=" * 60)
 print("Features: Real-time WebSocket | Explainable AI | PDF Reports")
 if DEMO_MODE:
@@ -459,13 +459,8 @@ def logout():
 # Role -> display title and access level
 _ROLE_MAP = {
     'administrator':  ('Administrator',  'admin'),
-    'doctor':         ('Doctor',         'admin'),
     'cardiologist':   ('Cardiologist',   'admin'),
-    'ecg analyst':    ('ECG Analyst',    'admin'),
-    'analyst':        ('ECG Analyst',    'admin'),
-    'nurse':          ('Nurse',          'admin'),
-    'researcher':     ('Researcher',     'viewer'),
-    'student':        ('Student',        'viewer'),
+    'medical_staff':  ('Medical Staff',  'admin'),
     'viewer':         ('Viewer',         'viewer'),
 }
 
@@ -493,9 +488,9 @@ def register():
         flash(f'Username "{username}" is already taken. Please choose another.', 'error')
         return redirect(url_for('login') + '?tab=signup')
 
-    role_title, access_level = _ROLE_MAP.get(role_raw, ('User', 'viewer'))
+    role_title, access_level = _ROLE_MAP.get(role_raw, ('Viewer', 'viewer'))
     full_name = f'{first} {last}'
-    if role_title in ('Doctor', 'Cardiologist'):
+    if role_title == 'Cardiologist':
         full_name = f'Dr. {last}'
 
     new_user = {
@@ -519,8 +514,7 @@ def register():
             print(f'[WARNING]   Could not persist user to MongoDB: {e}')
 
     flash(
-        f'Account created! Your username is <strong>{username}</strong>. '
-        f'You can now sign in.',
+        f'Account successfully created. You can now sign in with your username: <strong>{username}</strong>.',
         'success'
     )
     return redirect(url_for('login'))
@@ -705,6 +699,74 @@ def predict():
     except Exception as exc:
         traceback.print_exc()
         return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/digitize-ecg', methods=['POST'])
+@login_required
+@admin_required
+def digitize_ecg():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part provided'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    filename = file.filename.lower()
+    try:
+        file_bytes = file.read()
+        from src.utils.digitizer import extract_signal_from_image, extract_signal_from_pdf
+        
+        if filename.endswith('.pdf'):
+            signal_arr = extract_signal_from_pdf(file_bytes)
+        elif filename.endswith('.png') or filename.endswith('.jpg') or filename.endswith('.jpeg'):
+            signal_arr = extract_signal_from_image(file_bytes)
+        else:
+            return jsonify({'error': 'Unsupported file format for digitization. Use PNG, JPEG, or PDF.'}), 400
+            
+        return jsonify({'success': True, 'ecg_signal': signal_arr.tolist()})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analyze-report', methods=['POST'])
+@login_required
+@admin_required
+def analyze_report():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part provided'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    mime_type = file.content_type
+    if mime_type not in ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg']:
+        return jsonify({'error': 'Unsupported file format for report. Use PDF, PNG, or JPEG.'}), 400
+
+    try:
+        file_bytes = file.read()
+        import google.generativeai as genai
+        api_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+        
+        if not api_key:
+            return jsonify({'error': 'Gemini API Key is not configured on the server.'}), 500
+            
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        prompt = "Analyze this medical report. Provide a clear summary of the findings in HTML-compatible markdown, identify any abnormal values, and suggest recommended measures or lifestyle changes. Emphasize that this is AI-generated and the user should consult a primary care physician."
+        
+        response = model.generate_content([
+            {'mime_type': mime_type, 'data': file_bytes},
+            prompt
+        ])
+        
+        return jsonify({'success': True, 'analysis': response.text})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # -- WebSocket ------------------------------------------------------------------
@@ -1059,6 +1121,7 @@ def health():
 
 # -- AI Chat -------------------------------------------------------------------
 @app.route('/api/chat', methods=['POST'])
+@app.route('/api/ai/chat', methods=['POST'])
 @login_required
 def ai_chat():
     """
@@ -1553,6 +1616,92 @@ def alerts_test():
     t = threading.Thread(target=alert_engine._dispatch, args=(test_event,), daemon=True)
     t.start()
     return jsonify({'success': True, 'test_event': test_event.to_dict()})
+
+
+
+
+# -- Clinical Analytics -------------------------------------------------------
+
+@app.route('/api/analytics/trends', methods=['GET'])
+@login_required
+def analytics_trends():
+    """
+    Generate synthetic 24-hour trend data for clinical analytics.
+    In a real system, this would aggregate historical DB records.
+    """
+    try:
+        patient_id = request.args.get('patient_id', 'PATIENT_001')
+        
+        # Hours labels
+        hours = [f"{h:02d}:00" for h in range(24)]
+        
+        # Synthetic Vitals Heatmap Data (SpO2, HR, SysBP, DiaBP)
+        heatmap_vitals = [
+            # SpO2 (mostly 94-99)
+            [98, 97, 98, 99, 98, 97, 96, 95, 94, 95, 96, 97, 98, 98, 99, 98, 97, 96, 95, 96, 97, 98, 98, 99],
+            # HR (fluctuates during day)
+            [62, 60, 58, 65, 70, 75, 80, 85, 90, 88, 85, 82, 80, 85, 95, 105, 100, 90, 85, 80, 75, 70, 68, 65],
+            # SysBP (daytime peak)
+            [115, 110, 112, 118, 122, 125, 130, 135, 140, 138, 135, 132, 130, 135, 140, 145, 142, 135, 130, 128, 125, 122, 120, 118],
+            # DiaBP
+            [75, 72, 74, 78, 80, 82, 85, 88, 90, 88, 85, 82, 80, 82, 85, 90, 88, 85, 82, 80, 78, 76, 75, 74]
+        ]
+        
+        # Radar Data: Arrhythmia events by type over last 24h
+        radar_categories = ['PVC', 'PAC', 'Bradycardia', 'Tachycardia', 'AFom', 'Baseline Offset']
+        radar_values = [5, 12, 2, 8, 3, 1] if "001" in patient_id else [2, 6, 0, 4, 1, 0]
+
+        return jsonify({
+            'success': True,
+            'patient_id': patient_id,
+            'hours': hours,
+            'heatmap_vitals': heatmap_vitals,
+            'vitals_labels': ['SpO2 (%)', 'HR (bpm)', 'Sys BP (mmHg)', 'Dia BP (mmHg)'],
+            'radar_categories': radar_categories,
+            'radar_values': radar_values
+        })
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+# -- Collaborative Notes -----------------------------------------------------
+
+@app.route('/api/notes/submit', methods=['POST'])
+@login_required
+@admin_required
+def submit_note():
+    """Save a clinical note for a specific patient/reading and broadcast it."""
+    try:
+        data = request.get_json(silent=True) or {}
+        patient_id = data.get('patient_id', 'PATIENT_001')
+        note_text  = data.get('note', '').strip()
+        reading_id = data.get('reading_id', 'latest')
+        
+        if not note_text:
+            return jsonify({'success': False, 'error': 'Note text is required'}), 400
+            
+        note_data = {
+            'note_id': str(__import__('uuid').uuid4())[:8].upper(),
+            'patient_id': patient_id,
+            'reading_id': reading_id,
+            'author': session.get('name', 'Doctor'),
+            'note': note_text,
+            'timestamp': datetime.now().isoformat(),
+        }
+        
+        # Persist to MongoDB
+        if _USE_MONGO:
+            try:
+                from app.mongodb_database import save_note
+                save_note(note_data)
+            except Exception: pass
+            
+        # Broadcast to all clinicians
+        socketio.emit('new_clinical_note', note_data, broadcast=True)
+        
+        return jsonify({'success': True, 'note': note_data})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
 
 
 # -- Entry point ---------------------------------------------------------------

@@ -139,6 +139,31 @@ def get_client() -> MongoClient:
     )
 
 
+# --- Connection Health Heartbeat ---
+_db_healthy: bool = True
+_last_check: float = 0
+_CHECK_INTERVAL = 30 # seconds
+
+def is_db_reachable() -> bool:
+    """Check if MongoDB is actually reachable within a strict 2s timeout."""
+    global _db_healthy, _last_check
+    import time
+    now = time.time()
+    if now - _last_check < _CHECK_INTERVAL:
+        return _db_healthy
+    
+    _last_check = now
+    try:
+        client = get_client()
+        # The 'hello' command is the lightweight way to check connectivity
+        client.admin.command('hello', serverSelectionTimeoutMS=2000)
+        _db_healthy = True
+        return True
+    except Exception as e:
+        print(f"[DB] ⚠️ MongoDB Unreachable: {e}. Falling back to sample data for stability.")
+        _db_healthy = False
+        return False
+
 def get_database() -> Database:
     return get_client()[DB_NAME]
 
@@ -293,13 +318,28 @@ def init_database() -> None:
 
 # -- Patient CRUD --------------------------------------------------------------
 def get_all_patients() -> list[dict]:
-    docs = list(patients_col().find({}).sort('name', ASCENDING))
-    return [_patient_to_dict(d) for d in docs]
+    if not is_db_reachable():
+        print("[DB] Returning sample patients (DB offline)")
+        return [_patient_to_dict(p) for p in _SAMPLE_PATIENTS]
+        
+    try:
+        docs = list(patients_col().find({}).sort('name', ASCENDING))
+        return [_patient_to_dict(d) for d in docs]
+    except Exception:
+        return [_patient_to_dict(p) for p in _SAMPLE_PATIENTS]
 
 
 def get_patient(patient_id: str) -> Optional[dict]:
-    doc = patients_col().find_one({'patient_id': patient_id})
-    return _patient_to_dict(doc) if doc else None
+    if not is_db_reachable():
+        doc = next((p for p in _SAMPLE_PATIENTS if p['patient_id'] == patient_id), None)
+        return _patient_to_dict(doc) if doc else None
+        
+    try:
+        doc = patients_col().find_one({'patient_id': patient_id})
+        return _patient_to_dict(doc) if doc else None
+    except Exception:
+        doc = next((p for p in _SAMPLE_PATIENTS if p['patient_id'] == patient_id), None)
+        return _patient_to_dict(doc) if doc else None
 
 
 def create_patient(data: dict) -> dict:
@@ -325,121 +365,192 @@ def delete_patient(patient_id: str) -> bool:
 # -- ECG Analysis CRUD ---------------------------------------------------------
 def save_analysis(data: dict) -> dict:
     """Insert a new ECG analysis document and return it serialised."""
-    data['analysis_timestamp'] = datetime.now()
-    result = analyses_col().insert_one(data)
-    doc = analyses_col().find_one({'_id': result.inserted_id})
-    return _analysis_to_dict(doc)
+    if not is_db_reachable():
+        data['_id'] = "local_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        data['analysis_timestamp'] = datetime.now()
+        return _analysis_to_dict(data)
+        
+    try:
+        data['analysis_timestamp'] = datetime.now()
+        result = analyses_col().insert_one(data)
+        doc = analyses_col().find_one({'_id': result.inserted_id})
+        return _analysis_to_dict(doc)
+    except Exception:
+        data['_id'] = "local_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        return _analysis_to_dict(data)
 
 
 def get_patient_analyses(patient_id: str, limit: int = 50) -> list[dict]:
-    docs = list(
-        analyses_col()
-        .find({'patient_id': patient_id})
-        .sort('analysis_timestamp', DESCENDING)
-        .limit(limit)
-    )
-    return [_analysis_to_dict(d) for d in docs]
+    if not is_db_reachable():
+        return []
+    try:
+        docs = list(
+            analyses_col()
+            .find({'patient_id': patient_id})
+            .sort('analysis_timestamp', DESCENDING)
+            .limit(limit)
+        )
+        return [_analysis_to_dict(d) for d in docs]
+    except Exception:
+        return []
 
 
 # -- Stats ---------------------------------------------------------------------
 def get_stats() -> dict:
-    total_patients = patients_col().count_documents({})
-    total_analyses = analyses_col().count_documents({})
-    risk_breakdown = {
-        'Low':    analyses_col().count_documents({'risk_level': 'Low'}),
-        'Medium': analyses_col().count_documents({'risk_level': 'Medium'}),
-        'High':   analyses_col().count_documents({'risk_level': 'High'}),
-    }
-    return {
-        'total_patients':  total_patients,
-        'total_analyses':  total_analyses,
-        'risk_breakdown':  risk_breakdown,
-    }
+    if not is_db_reachable():
+        return {'total_patients': len(_SAMPLE_PATIENTS), 'total_analyses': 0, 'risk_breakdown': {'Low': 0, 'Medium': 0, 'High':0}}
+    try:
+        total_patients = patients_col().count_documents({})
+        total_analyses = analyses_col().count_documents({})
+        risk_breakdown = {
+            'Low':    analyses_col().count_documents({'risk_level': 'Low'}),
+            'Medium': analyses_col().count_documents({'risk_level': 'Medium'}),
+            'High':   analyses_col().count_documents({'risk_level': 'High'}),
+        }
+        return {
+            'total_patients':  total_patients,
+            'total_analyses':  total_analyses,
+            'risk_breakdown':  risk_breakdown,
+        }
+    except Exception:
+        return {'total_patients': len(_SAMPLE_PATIENTS), 'total_analyses': 0, 'risk_breakdown': {'Low': 0, 'Medium': 0, 'High':0}}
 
 
 # -- Vitals CRUD ---------------------------------------------------------------
 def save_vitals(data: dict) -> dict:
     """Insert a vitals reading; returns serialised doc."""
-    data['timestamp'] = datetime.now()
-    result = vitals_col().insert_one(data)
-    doc = vitals_col().find_one({'_id': result.inserted_id})
-    doc = dict(doc)
-    doc['_id'] = str(doc['_id'])
-    if isinstance(doc.get('timestamp'), datetime):
-        doc['timestamp'] = doc['timestamp'].isoformat()
-    return doc
+    if not is_db_reachable():
+        data['timestamp'] = datetime.now()
+        data['_id'] = "local_v_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        return data
+        
+    try:
+        data['timestamp'] = datetime.now()
+        result = vitals_col().insert_one(data)
+        doc = vitals_col().find_one({'_id': result.inserted_id})
+        if doc:
+            doc = dict(doc)
+            doc['_id'] = str(doc['_id'])
+            if isinstance(doc.get('timestamp'), datetime):
+                doc['timestamp'] = doc['timestamp'].isoformat()
+            return doc
+        return data
+    except Exception:
+        data['timestamp'] = datetime.now()
+        data['_id'] = "local_v_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        return data
 
 
 def get_patient_vitals(patient_id: str, limit: int = 50) -> list[dict]:
-    docs = list(
-        vitals_col()
-        .find({'patient_id': patient_id})
-        .sort('timestamp', DESCENDING)
-        .limit(limit)
-    )
-    result = []
-    for d in docs:
-        d = dict(d)
-        d['_id'] = str(d['_id'])
-        if isinstance(d.get('timestamp'), datetime):
-            d['timestamp'] = d['timestamp'].isoformat()
-        result.append(d)
-    return result
+    if not is_db_reachable():
+        return []
+        
+    try:
+        docs = list(
+            vitals_col()
+            .find({'patient_id': patient_id})
+            .sort('timestamp', DESCENDING)
+            .limit(limit)
+        )
+        result = []
+        for d in docs:
+            d = dict(d)
+            d['_id'] = str(d['_id'])
+            if isinstance(d.get('timestamp'), datetime):
+                d['timestamp'] = d['timestamp'].isoformat()
+            result.append(d)
+        return result
+    except Exception:
+        return []
 
 
 # -- IoT Device CRUD -----------------------------------------------------------
 def save_iot_device(data: dict) -> dict:
     """Upsert an IoT device record; returns serialised doc."""
-    data['updated_at'] = datetime.now()
-    iot_devices_col().update_one(
-        {'device_id': data['device_id']},
-        {'$set': data, '$setOnInsert': {'registered_at': datetime.now()}},
-        upsert=True,
-    )
-    doc = dict(iot_devices_col().find_one({'device_id': data['device_id']}))
-    doc['_id'] = str(doc['_id'])
-    return doc
+    if not is_db_reachable():
+        data['updated_at'] = datetime.now()
+        data['_id'] = "local_dev_" + data.get('device_id', 'unknown')
+        return data
+        
+    try:
+        data['updated_at'] = datetime.now()
+        iot_devices_col().update_one(
+            {'device_id': data['device_id']},
+            {'$set': data, '$setOnInsert': {'registered_at': datetime.now()}},
+            upsert=True,
+        )
+        doc = dict(iot_devices_col().find_one({'device_id': data['device_id']}))
+        doc['_id'] = str(doc['_id'])
+        return doc
+    except Exception:
+        return data
 
 
 def get_all_iot_devices() -> list[dict]:
-    docs = list(iot_devices_col().find({}))
-    result = []
-    for d in docs:
-        d = dict(d)
-        d['_id'] = str(d['_id'])
-        result.append(d)
-    return result
+    if not is_db_reachable():
+        return []
+        
+    try:
+        docs = list(iot_devices_col().find({}))
+        result = []
+        for d in docs:
+            d = dict(d)
+            d['_id'] = str(d['_id'])
+            result.append(d)
+        return result
+    except Exception:
+        return []
 
 
 def delete_iot_device(device_id: str) -> bool:
-    r = iot_devices_col().delete_one({'device_id': device_id})
-    return r.deleted_count > 0
+    if not is_db_reachable():
+        return True # Optimistic local delete
+        
+    try:
+        r = iot_devices_col().delete_one({'device_id': device_id})
+        return r.deleted_count > 0
+    except Exception:
+        return True
 
 
 # -- Alert Logs CRUD -----------------------------------------------------------
 def save_alert_log(data: dict) -> dict:
     """Insert an alert log entry."""
-    data['timestamp'] = datetime.now()
-    result = alert_logs_col().insert_one(data)
-    doc = dict(alert_logs_col().find_one({'_id': result.inserted_id}))
-    doc['_id'] = str(doc['_id'])
-    if isinstance(doc.get('timestamp'), datetime):
-        doc['timestamp'] = doc['timestamp'].isoformat()
-    return doc
+    if not is_db_reachable():
+        data['timestamp'] = datetime.now()
+        data['_id'] = "local_alert_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        return data
+        
+    try:
+        data['timestamp'] = datetime.now()
+        result = alert_logs_col().insert_one(data)
+        doc = dict(alert_logs_col().find_one({'_id': result.inserted_id}))
+        doc['_id'] = str(doc['_id'])
+        if isinstance(doc.get('timestamp'), datetime):
+            doc['timestamp'] = doc['timestamp'].isoformat()
+        return doc
+    except Exception:
+        return data
 
 
 def get_recent_alert_logs(limit: int = 100) -> list[dict]:
-    docs = list(
-        alert_logs_col()
-        .find({})
-        .sort('timestamp', DESCENDING)
-        .limit(limit)
-    )
-    result = []
-    for d in docs:
-        d = dict(d)
-        d['_id'] = str(d['_id'])
-        if isinstance(d.get('timestamp'), datetime):
-            d['timestamp'] = d['timestamp'].isoformat()
-        result.append(d)
-    return result
+    if not is_db_reachable():
+        return []
+        
+    try:
+        docs = list(
+            alert_logs_col()
+            .find({})
+            .sort('timestamp', DESCENDING)
+            .limit(limit)
+        )
+        result = []
+        for d in docs:
+            d = dict(d)
+            d['_id'] = str(d['_id'])
+            if isinstance(d.get('timestamp'), datetime):
+                d['timestamp'] = d['timestamp'].isoformat()
+            result.append(d)
+        return result
+    except Exception:
+        return []

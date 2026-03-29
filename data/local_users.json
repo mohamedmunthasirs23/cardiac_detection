@@ -52,5 +52,29 @@
         "role": "Doctor",
         "name": "Dr. munthasir",
         "access_level": "admin"
+    },
+    "blast": {
+        "password": "blast123",
+        "role": "Medical Staff",
+        "name": "first last",
+        "access_level": "admin"
+    },
+    "old": {
+        "password": "hii123",
+        "role": "Viewer",
+        "name": "old new",
+        "access_level": "viewer"
+    },
+    "hbye": {
+        "password": "hbye123",
+        "role": "Medical Staff",
+        "name": "hi bye",
+        "access_level": "admin"
+    },
+    "nothing": {
+        "password": "nthg123",
+        "role": "Administrator",
+        "name": "first thing",
+        "access_level": "admin"
     }
 }

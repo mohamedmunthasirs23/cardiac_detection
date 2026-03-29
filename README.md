@@ -1,4 +1,4 @@
-# 🫀 Advanced Cardiac Abnormality Detection System
+# 🫀 INTELLIGENT CARDIAC ABNORMALITY IDENTIFICATION THROUGH CARDIOMETRIC FEATURE ANALYSIS
 **AI-Powered Real-Time ECG Monitoring & Explainable Diagnosis**
 
 ---
