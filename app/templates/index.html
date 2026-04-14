@@ -14,17 +14,22 @@
 <body>
     <div class="container">
         <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <svg class="heart-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path
-                            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z">
-                        </path>
+        <header class="header" style="text-align:center;">
+            <div class="header-content" style="display:flex;flex-direction:column;align-items:center;gap:.5rem;">
+                <!-- Brand Logo Box (matches dashboard) -->
+                <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,rgba(0,119,255,.15),rgba(0,212,255,.08));border:2px solid rgba(0,212,255,.35);display:flex;align-items:center;justify-content:center;box-shadow:0 0 24px rgba(0,212,255,.25);">
+                    <svg width="34" height="20" viewBox="0 0 52 20" fill="none" stroke="#00d4ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="0,10 8,10 12,2 17,18 22,4 27,16 31,10 38,10 42,7 46,13 52,10"/>
                     </svg>
-                    <h1>Cardiac Abnormality Detection</h1>
                 </div>
-                <p class="subtitle">Intelligent identification through cardiometric feature analysis</p>
+                <div class="brand-text" style="display:flex;align-items:center;gap:.75rem;">
+                    <h1 style="margin:0;font-family:'Outfit',sans-serif;font-size:1.8rem;font-weight:900;letter-spacing:-.3px;line-height:1;">
+                        <span style="color:#0033aa;">CARDIO</span><span style="color:#00a2ff;">METRIC</span>
+                    </h1>
+                    <div style="height:22px;width:2px;background:rgba(0,162,255,0.3);border-radius:2px;"></div>
+                    <span style="font-size:.82rem;font-weight:700;color:#00a2ff;letter-spacing:1px;text-transform:uppercase;font-family:'Inter',sans-serif;line-height:1;opacity:.9;">ADVANCED ECG ANALYSIS</span>
+                </div>
+                <p class="subtitle" style="margin-top:1rem;">Intelligent identification through cardiometric feature analysis</p>
             </div>
         </header>
 

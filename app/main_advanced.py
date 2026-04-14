@@ -654,9 +654,11 @@ def predict():
         }
 
         # -- Persist to MongoDB --------------------------------------------
+        # Use the patient_id sent by the front-end (falls back to PATIENT_001)
+        analysis_patient_id = data.get('patient_id', 'PATIENT_001')
         try:
             doc = save_analysis({
-                'patient_id':   'PATIENT_001',
+                'patient_id':   analysis_patient_id,
                 'prediction':   response['prediction'],
                 'confidence':   float(confidence),
                 'uncertainty':  float(uncertainty),
@@ -1071,6 +1073,73 @@ def get_patient_analyses_route(patient_id: str):
                 sess.close()
         return jsonify({'success': True, 'analyses': analyses})
     except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@app.route('/api/patient-ecg-history/<patient_id>', methods=['GET'])
+@login_required
+def get_patient_ecg_history(patient_id: str):
+    """
+    Return a patient's full ECG history with summary stats and risk trend.
+    Used by the Patient ECG Tracker panel.
+    """
+    try:
+        # Get patient info
+        if _USE_MONGO:
+            patient = get_patient(patient_id)
+            analyses = get_patient_analyses(patient_id, limit=100)
+        else:
+            sess = get_session()
+            try:
+                p = sess.query(Patient).filter_by(patient_id=patient_id).first()
+                patient = p.to_dict() if p else None
+                from app.database import ECGAnalysis
+                analyses = [a.to_dict() for a in
+                            sess.query(ECGAnalysis).filter_by(patient_id=patient_id)
+                            .order_by(ECGAnalysis.id.desc()).limit(100).all()]
+            finally:
+                sess.close()
+
+        if not patient:
+            return jsonify({'success': False, 'error': 'Patient not found'}), 404
+
+        # Build risk trend list (newest first → reverse for chart)
+        risk_trend = []
+        for a in reversed(analyses):
+            ts = a.get('analysis_timestamp', a.get('timestamp', ''))
+            risk_trend.append({
+                'date':       ts[:10] if ts else 'N/A',
+                'timestamp':  ts,
+                'risk':       a.get('risk_level', 'Low'),
+                'confidence': round(float(a.get('confidence', 0)) * 100, 1),
+                'prediction': a.get('prediction', 'Unknown'),
+                'heart_rate': a.get('heart_rate') or a.get('features', {}).get('Heart Rate'),
+            })
+
+        # Summary
+        total = len(analyses)
+        last  = analyses[0] if analyses else {}
+        risk_counts = {'Low': 0, 'Medium': 0, 'High': 0}
+        for a in analyses:
+            rl = a.get('risk_level', 'Low')
+            risk_counts[rl] = risk_counts.get(rl, 0) + 1
+
+        return jsonify({
+            'success':   True,
+            'patient_id': patient_id,
+            'patient':   patient,
+            'analyses':  analyses,
+            'summary': {
+                'total_sessions':  total,
+                'last_diagnosis':  last.get('prediction', 'N/A') if last else 'N/A',
+                'last_risk':       last.get('risk_level', 'N/A') if last else 'N/A',
+                'last_confidence': round(float(last.get('confidence', 0)) * 100, 1) if last else 0,
+                'risk_counts':     risk_counts,
+                'risk_trend':      risk_trend,
+            },
+        })
+    except Exception as exc:
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(exc)}), 500
 
 

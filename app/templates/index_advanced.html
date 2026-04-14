@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#06091a">
-    <title>Cardiac Monitor Pro Advanced ECG Analysis</title>
+    <title>CardiMetric AI — Intelligent Cardiac Analysis</title>
     <meta name="description"
         content="AI-powered cardiac abnormality detection with explainable AI and patient history tracking.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style_advanced.css') }}">
@@ -367,18 +367,22 @@
 
     <!-- ===== TOP NAVIGATION ===== -->
     <nav class="top-nav" role="navigation" aria-label="Main navigation">
-        <div class="nav-brand">
-            <svg class="heart-icon-nav" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                <path
-                    d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z">
-                </path>
-            </svg>
-            <h1 class="brand-title">
-                <span class="title-primary">Intelligent Cardiac</span>
-                <span class="title-secondary">Analysis</span>
-            </h1>
-            <span class="badge badge--advanced">v3.0</span>
-        </div>
+            <!-- Brand Logo Box -->
+            <div style="display:flex;align-items:center;gap:.75rem;">
+                <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,rgba(0,119,255,.25),rgba(0,212,255,.15));border:1.5px solid rgba(0,212,255,.35);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 18px rgba(0,212,255,.2);">
+                    <svg width="26" height="16" viewBox="0 0 52 20" fill="none" stroke="#00d4ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="0,10 8,10 12,2 17,18 22,4 27,16 31,10 38,10 42,7 46,13 52,10"/>
+                    </svg>
+                </div>
+                <div style="display:flex;align-items:center;gap:.6rem;">
+                    <h1 style="margin:0;font-family:'Outfit',sans-serif;font-size:1.45rem;font-weight:900;letter-spacing:-.3px;line-height:1;">
+                        <span style="color:#ffffff;">CARDIO</span><span style="color:#00d4ff;">METRIC</span>
+                    </h1>
+                    <div style="height:18px;width:1.5px;background:rgba(0,212,255,0.3);border-radius:2px;"></div>
+                    <span style="font-size:.65rem;font-weight:700;color:rgba(0,212,255,.85);letter-spacing:1px;text-transform:uppercase;font-family:'Inter',sans-serif;line-height:1;margin-top:2px;">ADVANCED ECG ANALYSIS</span>
+                </div>
+            </div>
+
         <div class="nav-actions">
             <button class="nav-btn" id="realTimeBtn" aria-label="Real-Time Monitor">
                 <span class="status-dot" aria-hidden="true"></span>
@@ -536,110 +540,111 @@
                 </button>
             </div>
 
-            <!-- ===== MAIN CONTENT GRID ===== -->
+            <!-- ===== ECG DATA INPUT (full-width) ===== -->
+            <section class="card upload-card" aria-labelledby="uploadHeading" style="margin-bottom:1rem;">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
+                    <h2 id="uploadHeading" style="margin:0;display:flex;align-items:center;gap:.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" aria-hidden="true">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                        ECG Data Input
+                    </h2>
+                    <div class="action-buttons" style="margin:0;">
+                        <button class="btn-primary" id="generateSampleBtn" aria-label="Generate sample ECG">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" aria-hidden="true">
+                                <polygon
+                                    points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                            Generate Sample
+                        </button>
+                        <button class="btn-secondary" id="startStreamBtn" aria-label="Start real-time stream">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" aria-hidden="true">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            Live Stream
+                        </button>
+                    </div>
+                </div>
+                <div class="upload-area" id="uploadArea" role="button" tabindex="0"
+                    aria-label="Drop ECG file here or click to browse"
+                    style="margin-top:.75rem;">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    <p class="upload-text">Drop ECG file here or <span class="upload-link">click to browse</span></p>
+                    <p class="upload-hint">Supports CSV, TXT, JSON &bull; Max 10 MB</p>
+                    <input type="file" id="fileInput" accept=".csv,.txt,.json" hidden
+                        aria-label="Select ECG file">
+                </div>
+            </section>
+
+            <!-- ===== ECG SIGNAL VISUALIZATION (full-width) ===== -->
+            <section class="card ecg-card" id="ecgSection" style="display:none;margin-bottom:1rem;" aria-labelledby="ecgHeading">
+                <div class="card-header">
+                    <h2 id="ecgHeading">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" aria-hidden="true">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                        </svg>
+                        ECG Signal
+                    </h2>
+                    <div class="card-actions">
+                        <button class="icon-btn" id="zoomInBtn" aria-label="Zoom in" data-tooltip="Zoom In">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="11" cy="11" r="8" />
+                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                <line x1="11" y1="8" x2="11" y2="14" />
+                                <line x1="8" y1="11" x2="14" y2="11" />
+                            </svg>
+                        </button>
+                        <button class="icon-btn" id="zoomOutBtn" aria-label="Zoom out" data-tooltip="Zoom Out">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="11" cy="11" r="8" />
+                                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                <line x1="8" y1="11" x2="14" y2="11" />
+                            </svg>
+                        </button>
+                        <button class="icon-btn" id="downloadECGBtn" aria-label="Download ECG"
+                            data-tooltip="Download">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="ecgPlot" class="plot-container" role="img" aria-label="ECG signal plot"></div>
+                <button class="btn-primary btn-analyze" id="analyzeBtn" aria-live="polite">
+                    <span class="btn-text">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" aria-hidden="true">
+                            <path
+                                d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v11m0 0h10a2 2 0 0 0 2-2V9M9 14H5a2 2 0 0 1-2-2V9m0 0h18" />
+                        </svg>
+                        Analyze ECG
+                    </span>
+                    <span class="btn-loader" style="display:none;" aria-label="Analyzing...">
+                        <span class="spinner" aria-hidden="true"></span> Analyzing...
+                    </span>
+                </button>
+            </section>
+
+            <!-- ===== MAIN CONTENT GRID (results + history) ===== -->
             <div class="content-grid">
 
-                <!-- LEFT COLUMN -->
+                <!-- LEFT COLUMN: Patient History Timeline -->
                 <div class="left-column">
 
-                    <!-- Upload Card -->
-                    <section class="card upload-card" aria-labelledby="uploadHeading">
-                        <h2 id="uploadHeading">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" aria-hidden="true">
-                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                            </svg>
-                            ECG Data Input
-                        </h2>
-                        <div class="upload-area" id="uploadArea" role="button" tabindex="0"
-                            aria-label="Drop ECG file here or click to browse">
-                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                aria-hidden="true">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="17 8 12 3 7 8" />
-                                <line x1="12" y1="3" x2="12" y2="15" />
-                            </svg>
-                            <p class="upload-text">Drop ECG file here or <span class="upload-link">click to
-                                    browse</span></p>
-                            <p class="upload-hint">Supports CSV, TXT, JSON &bull; Max 10 MB</p>
-                            <input type="file" id="fileInput" accept=".csv,.txt,.json" hidden
-                                aria-label="Select ECG file">
-                        </div>
-                        <div class="action-buttons">
-                            <button class="btn-primary" id="generateSampleBtn" aria-label="Generate sample ECG">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" aria-hidden="true">
-                                    <polygon
-                                        points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                                </svg>
-                                Generate Sample
-                            </button>
-                            <button class="btn-secondary" id="startStreamBtn" aria-label="Start real-time stream">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" aria-hidden="true">
-                                    <polygon points="5 3 19 12 5 21 5 3" />
-                                </svg>
-                                Live Stream
-                            </button>
-                        </div>
-                    </section>
-
-                    <!-- ECG Visualization -->
-                    <section class="card ecg-card" id="ecgSection" style="display:none;" aria-labelledby="ecgHeading">
-                        <div class="card-header">
-                            <h2 id="ecgHeading">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" aria-hidden="true">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                                </svg>
-                                ECG Signal
-                            </h2>
-                            <div class="card-actions">
-                                <button class="icon-btn" id="zoomInBtn" aria-label="Zoom in" data-tooltip="Zoom In">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <circle cx="11" cy="11" r="8" />
-                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                                        <line x1="11" y1="8" x2="11" y2="14" />
-                                        <line x1="8" y1="11" x2="14" y2="11" />
-                                    </svg>
-                                </button>
-                                <button class="icon-btn" id="zoomOutBtn" aria-label="Zoom out" data-tooltip="Zoom Out">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <circle cx="11" cy="11" r="8" />
-                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                                        <line x1="8" y1="11" x2="14" y2="11" />
-                                    </svg>
-                                </button>
-                                <button class="icon-btn" id="downloadECGBtn" aria-label="Download ECG"
-                                    data-tooltip="Download">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7 10 12 15 17 10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div id="ecgPlot" class="plot-container" role="img" aria-label="ECG signal plot"></div>
-                        <button class="btn-primary btn-analyze" id="analyzeBtn" aria-live="polite">
-                            <span class="btn-text">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" aria-hidden="true">
-                                    <path
-                                        d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v11m0 0h10a2 2 0 0 0 2-2V9M9 14H5a2 2 0 0 1-2-2V9m0 0h18" />
-                                </svg>
-                                Analyze ECG
-                            </span>
-                            <span class="btn-loader" style="display:none;" aria-label="Analyzing...">
-                                <span class="spinner" aria-hidden="true"></span> Analyzing...
-                            </span>
-                        </button>
-                    </section>
-
-                    <!-- Patient History Timeline -->
                     <section class="card history-card" id="historySection" aria-labelledby="historyHeading">
                         <div class="card-header">
                             <h2 id="historyHeading">
@@ -773,8 +778,142 @@
                     </section>
                 </div>
             </div>
+            <!-- ===== PATIENT ECG TRACKER ===== -->
+            <section class="card" id="patientTrackerSection" style="margin-top:1rem;margin-bottom:1rem;" aria-labelledby="trackerHeading">
+                <style>
+                    .tracker-tabs { display:flex; gap:.5rem; margin-bottom:1rem; flex-wrap:wrap; }
+                    .tracker-tab-btn {
+                        padding:.45rem 1rem; border-radius:10px; font-size:.78rem; font-weight:700;
+                        background:rgba(255,255,255,.05); border:1.5px solid rgba(0,212,255,.15);
+                        color:#6b7db3; cursor:pointer; transition:all .2s; letter-spacing:.3px;
+                    }
+                    .tracker-tab-btn.active {
+                        background:rgba(0,212,255,.12); border-color:rgba(0,212,255,.45);
+                        color:#00d4ff; box-shadow:0 0 14px rgba(0,212,255,.12);
+                    }
+                    .tracker-tab-btn:hover:not(.active) { background:rgba(255,255,255,.08); color:#b8c4e0; }
+                    .tracker-tab-pane { display:none; }
+                    .tracker-tab-pane.active { display:block; }
+                    .ecg-records-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+                    .ecg-records-table th {
+                        text-align:left; padding:.45rem .65rem; font-size:.68rem; font-weight:700;
+                        color:#6b7db3; text-transform:uppercase; letter-spacing:.7px;
+                        border-bottom:1px solid rgba(255,255,255,.06);
+                    }
+                    .ecg-records-table td { padding:.55rem .65rem; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:middle; }
+                    .ecg-records-table tr:last-child td { border-bottom:none; }
+                    .ecg-records-table tr:hover td { background:rgba(0,212,255,.04); }
+                    .ecg-records-table tr { cursor:pointer; transition:background .15s; }
+                    .tracker-no-patient {
+                        text-align:center; padding:2rem 1rem; color:#6b7db3;
+                        font-size:.85rem; display:flex; flex-direction:column; align-items:center; gap:.5rem;
+                    }
+                    .tracker-no-patient svg { opacity:.4; }
+                    .tracker-summary-chips { display:flex; gap:.65rem; flex-wrap:wrap; margin-bottom:1rem; }
+                    .tracker-chip {
+                        background:rgba(0,212,255,.08); border:1px solid rgba(0,212,255,.2);
+                        border-radius:10px; padding:.4rem .85rem; font-size:.75rem; font-weight:600;
+                    }
+                    .tracker-chip span { color:#00d4ff; font-weight:800; margin-right:.3rem; }
+                    .live-track-box {
+                        background:rgba(0,212,255,.05); border:1.5px dashed rgba(0,212,255,.25);
+                        border-radius:12px; padding:1.25rem; text-align:center;
+                    }
+                    .live-track-box p { font-size:.82rem; color:#b8c4e0; margin:.5rem 0 1rem; }
+                    #trackerLiveStatus {
+                        display:inline-block; font-size:.72rem; font-weight:700; padding:.25rem .75rem;
+                        border-radius:999px; background:rgba(38,222,129,.12); color:#26de81;
+                        border:1px solid rgba(38,222,129,.3); display:none;
+                    }
+                    .upload-tracker-box {
+                        background:rgba(0,212,255,.04); border:1.5px dashed rgba(0,212,255,.2);
+                        border-radius:12px; padding:1.25rem; text-align:center; cursor:pointer;
+                        transition:border-color .25s, background .25s;
+                    }
+                    .upload-tracker-box:hover { border-color:rgba(0,212,255,.5); background:rgba(0,212,255,.08); }
+                    .upload-tracker-box p { font-size:.82rem; color:#b8c4e0; margin:.4rem 0; }
+                    .tracker-analyze-btn {
+                        margin-top:.75rem; display:none;
+                        padding:.5rem 1.25rem; border-radius:10px; font-size:.82rem; font-weight:700;
+                        background:linear-gradient(135deg,#0077ff,#00d4ff); color:#fff;
+                        border:none; cursor:pointer; transition:transform .15s, box-shadow .2s;
+                    }
+                    .tracker-analyze-btn:hover { transform:translateY(-1px); box-shadow:0 4px 16px rgba(0,212,255,.35); }
+                </style>
+                <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;">
+                    <h2 id="trackerHeading" style="display:flex;align-items:center;gap:.5rem;margin:0;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        Patient ECG Tracker
+                        <span style="font-size:.65rem;font-weight:600;background:rgba(38,222,129,.15);color:#26de81;border:1px solid rgba(38,222,129,.3);border-radius:99px;padding:.15rem .55rem;">NEW</span>
+                    </h2>
+                    <span id="trackerPatientBadge" style="font-size:.72rem;color:#00d4ff;font-family:'JetBrains Mono',monospace;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.18);padding:.25rem .65rem;border-radius:8px;display:none;"></span>
+                </div>
+
+                <div class="tracker-tabs">
+                    <button class="tracker-tab-btn active" data-tab="records" id="trackerTabRecords">📂 Past Records</button>
+                    <button class="tracker-tab-btn" data-tab="live" id="trackerTabLive">📡 Live Tracking</button>
+                    <button class="tracker-tab-btn" data-tab="upload" id="trackerTabUpload">📤 Upload &amp; Analyze</button>
+                </div>
+
+                <!-- Tab: Past Records -->
+                <div class="tracker-tab-pane active" id="trackerPaneRecords">
+                    <div id="trackerSummaryChips" class="tracker-summary-chips" style="display:none;"></div>
+                    <div id="trackerTableWrap">
+                        <div class="tracker-no-patient">
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="7" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2"/>
+                                <path d="M19 8l2 2-2 2"/><path d="M17 10h4"/>
+                            </svg>
+                            <span>Select a patient from the selector above to view their ECG session history.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Live Tracking -->
+                <div class="tracker-tab-pane" id="trackerPaneLive">
+                    <div class="live-track-box">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="1.5">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        <p id="trackerLiveDesc">Select a patient and click <strong>Start Live Tracking</strong> to begin a continuous real-time ECG stream for that patient.</p>
+                        <span id="trackerLiveStatus">🟢 Streaming…</span>
+                        <div style="display:flex;gap:.65rem;justify-content:center;flex-wrap:wrap;margin-top:.75rem;">
+                            <button class="btn-primary btn--sm" id="trackerStartLiveBtn"
+                                style="display:inline-flex;align-items:center;gap:.4rem;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Start Live Tracking
+                            </button>
+                            <button class="btn-secondary btn--sm" id="trackerStopLiveBtn" disabled
+                                style="display:inline-flex;align-items:center;gap:.4rem;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
+                                Stop
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Upload & Analyze -->
+                <div class="tracker-tab-pane" id="trackerPaneUpload">
+                    <div class="upload-tracker-box" id="trackerUploadBox" role="button" tabindex="0">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p>Drop an ECG file here or <strong style="color:#00d4ff;">click to browse</strong></p>
+                        <p style="font-size:.72rem;color:#6b7db3;">Supports CSV, TXT, JSON — file will be analysed for the selected patient</p>
+                        <input type="file" id="trackerFileInput" accept=".csv,.txt,.json" hidden>
+                    </div>
+                    <div id="trackerUploadInfo" style="margin-top:.65rem;font-size:.78rem;color:#26de81;display:none;"></div>
+                    <button class="tracker-analyze-btn" id="trackerAnalyzeBtn">⚡ Analyze for Selected Patient</button>
+                </div>
+            </section>
             <!-- ===== REAL-WORLD INTEGRATION PANELS ===== -->
             <div style="margin-top:1rem;position:relative;z-index:10;">
+
 
                 <!-- VITAL SIGNS MONITOR -->
                 <section class="card" id="vitalsSection" style="margin-bottom:1rem;" aria-labelledby="vitalsHeading">
@@ -2073,8 +2212,279 @@
             $('refreshDevicesBtn')?.addEventListener('click', refreshDevices);
             refreshDevices();
             refreshAlerts();
+
+            // ── Patient ECG Tracker ──────────────────────────────────────────
+            (function initTracker() {
+                const trackerSection = $('patientTrackerSection');
+                const patientSel    = $('selectedPatient');
+
+                // Tab switching
+                document.querySelectorAll('.tracker-tab-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.querySelectorAll('.tracker-tab-btn').forEach(b => b.classList.remove('active'));
+                        document.querySelectorAll('.tracker-tab-pane').forEach(p => p.classList.remove('active'));
+                        btn.classList.add('active');
+                        const pane = $('trackerPane' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1));
+                        if (pane) pane.classList.add('active');
+                    });
+                });
+
+                // Load patient ECG history via new API
+                async function loadTrackerHistory(patientId) {
+                    const wrap    = $('trackerTableWrap');
+                    const chips   = $('trackerSummaryChips');
+                    const badge   = $('trackerPatientBadge');
+                    const liveDesc = $('trackerLiveDesc');
+
+                    wrap.innerHTML = '<div style="color:#6b7db3;font-size:.8rem;padding:1rem;">Loading…</div>';
+                    chips.style.display = 'none';
+
+                    try {
+                        const res  = await fetch('/api/patient-ecg-history/' + patientId);
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.error || 'Failed');
+
+                        const { patient, analyses, summary } = data;
+                        const pName = patient?.name || patientId;
+
+                        // Update badge
+                        if (badge) { badge.textContent = pName + ' · ' + patientId; badge.style.display = ''; }
+
+                        // Update live tab desc
+                        if (liveDesc) liveDesc.innerHTML = `Live streaming ECG for <strong style="color:#00d4ff">${pName}</strong>. Click Start to begin.`;
+
+                        // Summary chips
+                        if (summary) {
+                            chips.innerHTML = [
+                                `<div class="tracker-chip"><span>${summary.total_sessions}</span> Sessions</div>`,
+                                `<div class="tracker-chip"><span>${summary.last_diagnosis}</span> Last Diagnosis</div>`,
+                                `<div class="tracker-chip"><span>${summary.last_confidence}%</span> Last Confidence</div>`,
+                                `<div class="tracker-chip"><span style="color:${summary.last_risk==='High'?'#ff4757':summary.last_risk==='Medium'?'#ffa500':'#26de81'}">${summary.last_risk}</span> Risk</div>`,
+                                `<div class="tracker-chip"><span style="color:#26de81">${summary.risk_counts?.Low||0}</span> Low / <span style="color:#ffa500">${summary.risk_counts?.Medium||0}</span> Med / <span style="color:#ff4757">${summary.risk_counts?.High||0}</span> High</div>`,
+                            ].join('');
+                            chips.style.display = 'flex';
+
+                            // Update patient chip with last diagnosis
+                            const chipRisk = $('chipRisk');
+                            if (chipRisk && summary.last_risk !== 'N/A') {
+                                const rClass = `risk-pill--${summary.last_risk.toLowerCase()}`;
+                                chipRisk.className = `risk-pill ${rClass}`;
+                                chipRisk.textContent = `Last: ${summary.last_diagnosis}`;
+                                chipRisk.style.display = 'inline';
+                            }
+                        }
+
+                        // Table
+                        if (!analyses.length) {
+                            wrap.innerHTML = '<div style="text-align:center;color:#6b7db3;padding:2rem;font-size:.82rem;">No ECG sessions recorded for this patient yet.<br>Use the <strong>Upload &amp; Analyze</strong> tab or the main upload above to add one.</div>';
+                            return;
+                        }
+
+                        wrap.innerHTML = `
+                            <div style="overflow-x:auto;">
+                            <table class="ecg-records-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Date &amp; Time</th>
+                                        <th>Diagnosis</th>
+                                        <th>Confidence</th>
+                                        <th>Risk</th>
+                                        <th>Heart Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trackerTbody"></tbody>
+                            </table>
+                            </div>`;
+
+                        const tbody = $('trackerTbody');
+                        analyses.forEach((a, i) => {
+                            const ts    = a.analysis_timestamp || a.timestamp || '';
+                            const d     = ts ? new Date(ts) : null;
+                            const dateStr = d ? d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'N/A';
+                            const rl    = a.risk_level || 'Low';
+                            const rColor = rl === 'High' ? '#ff4757' : rl === 'Medium' ? '#ffa500' : '#26de81';
+                            const conf  = a.confidence ? (a.confidence * 100).toFixed(1) + '%' : '—';
+                            const hr    = a.heart_rate ? Math.round(a.heart_rate) + ' bpm' : (a.features?.['Heart Rate'] ? Math.round(a.features['Heart Rate']) + ' bpm' : '—');
+                            const pred  = a.prediction || '—';
+                            const isNorm = pred.toLowerCase().includes('normal');
+                            const predColor = isNorm ? '#26de81' : (rl === 'High' ? '#ff4757' : '#ffa500');
+
+                            const tr = document.createElement('tr');
+                            tr.title = 'Click to load this analysis into results panel';
+                            tr.innerHTML = `
+                                <td style="color:#6b7db3;font-family:monospace;font-size:.7rem;">${analyses.length - i}</td>
+                                <td style="font-size:.75rem;color:#b8c4e0;font-family:'JetBrains Mono',monospace;">${dateStr}</td>
+                                <td style="font-weight:700;color:${predColor};">${pred}</td>
+                                <td style="font-family:monospace;">${conf}</td>
+                                <td><span style="font-size:.68rem;font-weight:800;padding:.18rem .55rem;border-radius:999px;background:${rColor}22;color:${rColor};border:1px solid ${rColor}66;">${rl}</span></td>
+                                <td style="font-family:monospace;">${hr}</td>`;
+
+                            // Clicking a row restores it into the results panel
+                            tr.addEventListener('click', () => {
+                                if (typeof displayResults === 'function' && a.prediction) {
+                                    const synth = {
+                                        prediction: a.prediction, confidence: parseFloat(a.confidence||0),
+                                        uncertainty: parseFloat(a.uncertainty||0),
+                                        risk_level: a.risk_level || 'Low',
+                                        probabilities: a.probabilities || {},
+                                        features: a.features || {},
+                                        recommendations: a.recommendations || [],
+                                        gradcam_heatmap: null, shap_values: null,
+                                    };
+                                    displayResults(synth);
+                                    if (typeof updateLiveStats === 'function') updateLiveStats(synth);
+                                    if (typeof showSection === 'function') {
+                                        showSection(document.getElementById('resultsSection'));
+                                        showSection(document.getElementById('featuresSection'));
+                                    }
+                                    if (typeof showNotification === 'function') showNotification('Loaded analysis from ' + dateStr, 'info');
+                                }
+                            });
+                            tbody.appendChild(tr);
+                        });
+
+                    } catch(err) {
+                        wrap.innerHTML = '<div style="color:#ff4757;font-size:.8rem;padding:1rem;">Error: ' + err.message + '</div>';
+                    }
+                }
+
+                // Listen to patient selector changes
+                if (patientSel) {
+                    patientSel.addEventListener('change', e => {
+                        const pid = e.target.value;
+                        if (pid) loadTrackerHistory(pid);
+                        else {
+                            $('trackerTableWrap').innerHTML = `
+                                <div class="tracker-no-patient">
+                                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="7" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2"/></svg>
+                                    <span>Select a patient from the selector above to view their ECG session history.</span>
+                                </div>`;
+                            if ($('trackerSummaryChips')) $('trackerSummaryChips').style.display = 'none';
+                            if ($('trackerPatientBadge')) $('trackerPatientBadge').style.display = 'none';
+                        }
+                    });
+                }
+
+                // Live tracking tab buttons
+                let trackerInterval = null;
+                $('trackerStartLiveBtn')?.addEventListener('click', () => {
+                    const pid = patientSel?.value;
+                    if (!pid) { if (typeof showNotification === 'function') showNotification('⚠️ Please select a patient first', 'warning'); return; }
+                    if (!window.currentECGData?.length) { if (typeof showNotification === 'function') showNotification('⚠️ Generate or upload ECG data first', 'warning'); return; }
+                    if (!window.socket) { if (typeof initializeSocket === 'function') initializeSocket(); }
+                    window.socket?.emit('start_monitoring', { patient_id: pid });
+                    let idx = 0;
+                    $('trackerStartLiveBtn').disabled = true;
+                    $('trackerStopLiveBtn').disabled = false;
+                    $('trackerLiveStatus').style.display = 'inline-block';
+                    trackerInterval = setInterval(() => {
+                        const chunk = window.currentECGData.slice(idx, idx + 100);
+                        if (chunk.length) { window.socket?.emit('stream_ecg', { ecg_data: chunk, patient_id: pid }); idx += 100; }
+                        else idx = 0;
+                    }, 500);
+                    if (typeof showNotification === 'function') showNotification('📡 Live tracking started for ' + pid, 'success');
+                });
+
+                $('trackerStopLiveBtn')?.addEventListener('click', () => {
+                    clearInterval(trackerInterval); trackerInterval = null;
+                    $('trackerStartLiveBtn').disabled = false;
+                    $('trackerStopLiveBtn').disabled = true;
+                    $('trackerLiveStatus').style.display = 'none';
+                    if (typeof showNotification === 'function') showNotification('Live tracking stopped', 'info');
+                });
+
+                // Upload & Analyze tab
+                const trackerUploadBox = $('trackerUploadBox');
+                const trackerFileInput = $('trackerFileInput');
+                const trackerAnalyzeBtn = $('trackerAnalyzeBtn');
+                const trackerUploadInfo = $('trackerUploadInfo');
+                let trackerECGData = null;
+
+                trackerUploadBox?.addEventListener('click', () => trackerFileInput?.click());
+                trackerUploadBox?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trackerFileInput?.click(); } });
+                trackerUploadBox?.addEventListener('dragover', e => { e.preventDefault(); trackerUploadBox.style.borderColor = '#00d4ff'; });
+                trackerUploadBox?.addEventListener('dragleave', () => trackerUploadBox.style.borderColor = '');
+                trackerUploadBox?.addEventListener('drop', e => {
+                    e.preventDefault(); trackerUploadBox.style.borderColor = '';
+                    if (e.dataTransfer.files[0]) handleTrackerFile(e.dataTransfer.files[0]);
+                });
+                trackerFileInput?.addEventListener('change', e => { if (e.target.files[0]) handleTrackerFile(e.target.files[0]); });
+
+                function handleTrackerFile(file) {
+                    const reader = new FileReader();
+                    reader.onload = e => {
+                        try {
+                            let data;
+                            if (file.name.endsWith('.json')) {
+                                const json = JSON.parse(e.target.result);
+                                data = json.signal || json.data || json.ecg_signal || json;
+                                if (Array.isArray(data) && data.length && typeof data[0] === 'object') data = data.map(v => v.value ?? v.amplitude ?? v);
+                            } else {
+                                data = e.target.result.split(/[\n,\r]+/).map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+                            }
+                            if (data?.length >= 100) {
+                                trackerECGData = data;
+                                // Also set as global for reuse
+                                window.currentECGData = data;
+                                if (typeof visualizeECG === 'function') { visualizeECG(data); if (typeof showSection === 'function') showSection(document.getElementById('ecgSection')); }
+                                trackerUploadInfo.textContent = '✓ ' + file.name + ' loaded (' + data.length.toLocaleString() + ' samples)';
+                                trackerUploadInfo.style.display = '';
+                                trackerAnalyzeBtn.style.display = 'inline-block';
+                                if (typeof showNotification === 'function') showNotification('✓ ECG loaded: ' + file.name, 'success');
+                            } else {
+                                if (typeof showNotification === 'function') showNotification('⚠️ File too short or could not parse ECG', 'warning');
+                            }
+                        } catch(err) {
+                            if (typeof showNotification === 'function') showNotification('❌ Error reading file: ' + err.message, 'error');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+
+                trackerAnalyzeBtn?.addEventListener('click', async () => {
+                    const pid = patientSel?.value;
+                    if (!pid) { if (typeof showNotification === 'function') showNotification('⚠️ Select a patient first', 'warning'); return; }
+                    if (!trackerECGData?.length) { if (typeof showNotification === 'function') showNotification('⚠️ Upload an ECG file first', 'warning'); return; }
+
+                    trackerAnalyzeBtn.disabled = true;
+                    trackerAnalyzeBtn.textContent = 'Analyzing…';
+
+                    try {
+                        const res = await fetch('/api/predict', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ecg_signal: trackerECGData, patient_id: pid }),
+                        });
+                        const result = await res.json();
+                        if (result.success) {
+                            if (typeof displayResults === 'function') displayResults(result);
+                            if (typeof displayXAI === 'function') displayXAI(result);
+                            if (typeof updateLiveStats === 'function') updateLiveStats(result);
+                            if (typeof showSection === 'function') {
+                                showSection(document.getElementById('resultsSection'));
+                                showSection(document.getElementById('featuresSection'));
+                            }
+                            if (typeof showNotification === 'function') showNotification('✓ Analysis saved for patient ' + pid, 'success');
+                            // Reload records tab
+                            setTimeout(() => loadTrackerHistory(pid), 600);
+                        } else {
+                            if (typeof showNotification === 'function') showNotification('❌ ' + (result.error || 'Analysis failed'), 'error');
+                        }
+                    } catch(err) {
+                        if (typeof showNotification === 'function') showNotification('❌ ' + err.message, 'error');
+                    } finally {
+                        trackerAnalyzeBtn.disabled = false;
+                        trackerAnalyzeBtn.textContent = '⚡ Analyze for Selected Patient';
+                    }
+                });
+
+                // Expose loader so app_advanced.js can call it after patient change
+                window.loadTrackerHistory = loadTrackerHistory;
+            })();
         })();
     </script>
+
 
     <!-- ===== LEGAL MODALS ===== -->
     <style>

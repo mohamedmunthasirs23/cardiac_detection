@@ -65,8 +65,15 @@ function showNotification(message, type = 'info') {
 // ── WebSocket Init ───────────────────────────────────────────────────────────
 function initializeSocket() {
     socket = io();
-    socket.on('connect', () => showNotification('Connected to real-time server', 'success'));
-    socket.on('disconnect', () => showNotification('Disconnected from server', 'warning'));
+    // Silently update the status dot on connect/disconnect — no toast spam
+    socket.on('connect', () => {
+        const dot = document.querySelector('.status-dot');
+        if (dot) { dot.style.background = 'var(--success)'; dot.style.boxShadow = '0 0 12px var(--success)'; }
+    });
+    socket.on('disconnect', () => {
+        const dot = document.querySelector('.status-dot');
+        if (dot) { dot.style.background = 'var(--danger)'; dot.style.boxShadow = '0 0 12px var(--danger)'; }
+    });
     socket.on('prediction_update', updateRealtimeDisplay);
     socket.on('critical_alert', data => showNotification(`🚨 CRITICAL: ${data.message}`, 'error'));
     socket.on('monitoring_started', () => {
@@ -766,8 +773,5 @@ window.addEventListener('load', async () => {
     observeCards();
     applyViewerRestrictions();
     await initPatientSelector();
-    const welcomeMsg = isViewer
-        ? '👁 View-only mode — you can browse data but cannot make changes'
-        : 'Cardiac Monitor Pro ready — select a patient to begin';
-    showNotification(welcomeMsg, isViewer ? 'warning' : 'info');
+    // No startup toast — status is shown via the nav status dot
 });

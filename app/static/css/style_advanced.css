@@ -569,16 +569,14 @@ body::after {
 
 /* ── CONTENT GRID ──────────────────────────────────────────── */
 .content-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
 
 .left-column,
 .right-column {
-    display: flex;
-    flex-direction: column;
-    gap: 1.75rem;
+    display: contents; /* Let children flow directly into the full-width column */
 }
 
 /* ── PREMIUM CARDS ─────────────────────────────────────────── */
@@ -1636,11 +1634,8 @@ body::after {
 }
 
 /* ── RESPONSIVE ────────────────────────────────────────────── */
-@media (max-width: 1200px) {
-    .content-grid {
-        grid-template-columns: 1fr;
-    }
-}
+
+
 
 @media (max-width: 900px) {
     .container {
