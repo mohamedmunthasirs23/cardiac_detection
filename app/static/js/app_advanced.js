@@ -594,6 +594,129 @@ async function generatePDFReport() {
     }
 }
 
+// ── Medical Report Analyzer ──────────────────────────────────────────────────
+const reportUploadArea = $('reportUploadArea');
+const reportFileInput = $('reportFileInput');
+const browseReportBtn = $('browseReportBtn');
+const reportFileName = $('reportFileName');
+const analyzeReportBtn = $('analyzeReportBtn');
+const analyzeReportBtnText = $('analyzeReportBtnText');
+const analyzeReportLoader = $('analyzeReportLoader');
+const reportResponseArea = $('reportResponseArea');
+const reportMarkdownContent = $('reportMarkdownContent');
+
+let currentReportFile = null;
+
+if (reportUploadArea) {
+    reportUploadArea.addEventListener('click', (e) => {
+        if (e.target !== browseReportBtn) reportFileInput.click();
+    });
+    
+    browseReportBtn.addEventListener('click', () => reportFileInput.click());
+    
+    reportUploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (isViewer) return;
+        reportUploadArea.style.borderColor = 'var(--primary)';
+        reportUploadArea.style.background = 'rgba(0, 212, 255, 0.1)';
+    });
+    
+    reportUploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        reportUploadArea.style.borderColor = 'rgba(0,212,255,.2)';
+        reportUploadArea.style.background = 'rgba(0,0,0,.15)';
+    });
+    
+    reportUploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (isViewer) return;
+        reportUploadArea.style.borderColor = 'rgba(0,212,255,.2)';
+        reportUploadArea.style.background = 'rgba(0,0,0,.15)';
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            handleReportFile(e.dataTransfer.files[0]);
+        }
+    });
+    
+    reportFileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            handleReportFile(e.target.files[0]);
+        }
+    });
+    
+    analyzeReportBtn.addEventListener('click', performReportAnalysis);
+}
+
+function handleReportFile(file) {
+    if (isViewer) {
+        showNotification('🔒 View-only access.', 'error');
+        return;
+    }
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+        showNotification('⚠️ Unsupported file type. Please use PDF, JPG, or PNG.', 'warning');
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        showNotification('⚠️ File exceeds 10MB limit.', 'error');
+        return;
+    }
+    
+    currentReportFile = file;
+    reportFileName.textContent = file.name;
+    reportFileName.style.display = 'block';
+    analyzeReportBtn.disabled = false;
+    
+    // Hide previous response map if user uploads a new file
+    reportResponseArea.style.display = 'none';
+    reportMarkdownContent.innerHTML = '';
+}
+
+async function performReportAnalysis() {
+    if (!currentReportFile) return;
+    if (isViewer) {
+        showNotification('🔒 View-only access — report analysis disabled.', 'error');
+        return;
+    }
+    
+    analyzeReportBtn.disabled = true;
+    analyzeReportBtnText.textContent = 'Analyzing...';
+    analyzeReportLoader.style.display = 'inline-block';
+    
+    const formData = new FormData();
+    formData.append('file', currentReportFile);
+    
+    try {
+        const res = await fetch('/api/analyze-report', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            reportResponseArea.style.display = 'block';
+            
+            // Parse with marked.js if available
+            if (typeof marked !== 'undefined') {
+                reportMarkdownContent.innerHTML = marked.parse(data.analysis);
+            } else {
+                reportMarkdownContent.innerHTML = data.analysis.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+            }
+            
+            showNotification('✅ Report analysis complete!', 'success');
+        } else {
+            showNotification(`❌ ${data.error || 'Failed to analyze report'}`, 'error');
+        }
+    } catch (err) {
+        showNotification(`❌ Error analyzing report`, 'error');
+    } finally {
+        analyzeReportBtnText.textContent = 'Analyze with Gemini';
+        analyzeReportLoader.style.display = 'none';
+        // Only re-enable if there is NO error and we want them to be able to click it again, but usually users upload a new file.
+        // If we want to allow re-analysis, we un-disable it.
+        analyzeReportBtn.disabled = false;
+    }
+}
+
 // ── Patients Modal ───────────────────────────────────────────────────────────
 async function showPatientsModal() {
     patientsModal.style.display = 'flex';
@@ -748,6 +871,7 @@ function applyViewerRestrictions() {
     const writeElements = [
         generateSampleBtn, startStreamBtn, analyzeBtn, realTimeBtn,
         $('generateReportBtn'), $('startMonitoringBtn'),
+        $('analyzeReportBtn')
     ];
     writeElements.forEach(el => {
         if (!el) return;
@@ -763,6 +887,13 @@ function applyViewerRestrictions() {
         uploadArea.style.cursor = 'not-allowed';
         uploadArea.title = '🔒 View-only access';
         uploadArea.setAttribute('tabindex', '-1');
+    }
+    const reportUploadAreaEl = $('reportUploadArea');
+    if (reportUploadAreaEl) {
+        reportUploadAreaEl.style.opacity = '0.45';
+        reportUploadAreaEl.style.cursor = 'not-allowed';
+        reportUploadAreaEl.title = '🔒 View-only access';
+        reportUploadAreaEl.setAttribute('tabindex', '-1');
     }
 }
 
